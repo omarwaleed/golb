@@ -46,7 +46,13 @@ func main() {
 	go ListenSecure(lb)
 
 	// Initialize configuration listener
-	err := http.ListenAndServe(":"+strconv.Itoa(*configPort), HandleConfigRequest(lb))
+	configMux := http.NewServeMux()
+	configMux.Handle("/*", HandleConfigRequest(lb))
+	configServer := http.Server{
+		Addr:    ":" + strconv.Itoa(*configPort),
+		Handler: configMux,
+	}
+	err := configServer.ListenAndServe()
 	if err != nil {
 		log.Fatalln(err)
 	}
