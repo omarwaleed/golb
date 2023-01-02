@@ -1,9 +1,13 @@
 package main
 
 import (
+	"errors"
 	"flag"
+	"log"
 	"net/http"
+	"regexp"
 	"strconv"
+	"strings"
 
 	lib "github.com/omarwaleed/golb/lib"
 )
@@ -12,32 +16,63 @@ func main() {
 
 	// Define flags
 	configPort := flag.Int("config-port", 8080, "Port to listen on for configuration requests")
+	hostsConfig := flag.String("hosts", "", "Comma-separated list of domain regex to host ex. *.example.com=1.2.3.4")
 
 	flag.Parse()
 
 	// Initialize load balancer
 	lb := lib.NewLoadBalancer(lib.DistributionTypeRoundRobin, false, false)
+	hostStrings := strings.Split(*hostsConfig, ",")
+	for _, hostString := range hostStrings {
+		hostSplit := strings.Split(hostString, "=")
+		if len(hostSplit) != 2 {
+			panic("Invalid host configuration")
+		}
+		domainHosts, ok := lb.DomainHosts[hostSplit[0]]
+		if !ok {
+			domainHosts = make([]lib.Host, 0)
+		}
+		host, err := lib.NewHost(hostSplit[1], "/", 30)
+		if err != nil {
+			panic(err)
+		}
+		domainHosts = append(domainHosts, *host)
+		lb.DomainHosts[hostSplit[0]] = domainHosts
+	}
 
 	// Initialize HTTP and HTTPS listeners
 	go ListenInsecure(lb)
 	go ListenSecure(lb)
 
 	// Initialize configuration listener
-	http.ListenAndServe(":"+strconv.Itoa(*configPort), HandleConfigRequest(lb))
+	err := http.ListenAndServe(":"+strconv.Itoa(*configPort), HandleConfigRequest(lb))
+	if err != nil {
+		log.Fatalln(err)
+	}
 }
 
 func ListenInsecure(lb *lib.LoadBalancer) {
-	http.ListenAndServe(":80", HandleRequestInsecure(lb))
+	err := http.ListenAndServe(":80", HandleRequestInsecure(lb))
+	if err != nil {
+		log.Fatalln(err)
+	}
 }
 
 func ListenSecure(lb *lib.LoadBalancer) {
-	http.ListenAndServe(":443", HandleRequestSecure(lb))
+	err := http.ListenAndServe(":443", HandleRequestSecure(lb))
+	if err != nil {
+		log.Fatalln(err)
+	}
 }
 
 func HandleRequestInsecure(lb *lib.LoadBalancer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if lb.ForceHTTPS {
-			http.Redirect(w, r, "https://"+r.Host+r.URL.String(), http.StatusMovedPermanently)
+			pathPrefix := ""
+			if strings.HasPrefix(r.URL.String(), "/") {
+				pathPrefix = "/"
+			}
+			http.Redirect(w, r, "https://"+r.Host+pathPrefix+r.URL.String(), http.StatusMovedPermanently)
 			return
 		}
 	})
@@ -45,7 +80,16 @@ func HandleRequestInsecure(lb *lib.LoadBalancer) http.Handler {
 
 func HandleRequestSecure(lb *lib.LoadBalancer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// TODO
+		switch lb.DistributionType {
+		case lib.DistributionTypeRoundRobin:
+			HandleRoundRobinRequest(w, r, lb)
+		case lib.DistributionTypeRandom:
+			HandleRandomRequest(w, r, lb)
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Bad gateway"))
+			return
+		}
 	})
 }
 
@@ -61,4 +105,18 @@ func HandleRoundRobinRequest(w http.ResponseWriter, r *http.Request, lb *lib.Loa
 
 func HandleRandomRequest(w http.ResponseWriter, r *http.Request, lb *lib.LoadBalancer) {
 	// TODO
+}
+
+func MatchHostList(r *http.Request, lb *lib.LoadBalancer) (*[]lib.Host, error) {
+	for key, hosts := range lb.DomainHosts {
+		match, err := regexp.Match(key, []byte(r.Host))
+		if err != nil {
+			return nil, err
+		}
+		if !match {
+			continue
+		}
+		return &hosts, nil
+	}
+	return nil, errors.New("no hosts found")
 }
