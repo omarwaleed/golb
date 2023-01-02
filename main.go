@@ -18,11 +18,19 @@ func main() {
 	// Define flags
 	configPort := flag.Int("config-port", 8080, "Port to listen on for configuration requests")
 	hostsConfig := flag.String("hosts", "", "Comma-separated list of domain regex to host ex. *.example.com=1.2.3.4")
+	typeConfig := flag.String("type", string(lib.DistributionTypeRoundRobin), "Type of load balancing to use. Defaults to round_robin")
+	forceHttpsConfig := flag.Bool("force-https", false, "Force HTTPS on all requests")
+	stickyConfig := flag.Bool("sticky", false, "Enable sticky sessions")
 
 	flag.Parse()
 
+	distributionType, err := lib.ParseDistrubutionType(*typeConfig)
+	if err != nil {
+		panic(err)
+	}
+
 	// Initialize load balancer
-	lb := lib.NewLoadBalancer(lib.DistributionTypeRoundRobin, false, false)
+	lb := lib.NewLoadBalancer(distributionType, *forceHttpsConfig, *stickyConfig)
 	hostStrings := strings.Split(*hostsConfig, ",")
 	for _, hostString := range hostStrings {
 		hostSplit := strings.Split(hostString, "=")
@@ -52,7 +60,7 @@ func main() {
 		Addr:    ":" + strconv.Itoa(*configPort),
 		Handler: configMux,
 	}
-	err := configServer.ListenAndServe()
+	err = configServer.ListenAndServe()
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -113,6 +121,8 @@ func HandleConfigRequest(lb *lib.LoadBalancer) http.Handler {
 
 // Actual implementation of the round robin algorithm
 func HandleRoundRobinRequest(w http.ResponseWriter, r *http.Request, lb *lib.LoadBalancer) {
+	lb.DomainHostsMu.Lock()
+	defer lb.DomainHostsMu.Unlock()
 	hosts, err := MatchHostList(r, lb)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -125,6 +135,8 @@ func HandleRoundRobinRequest(w http.ResponseWriter, r *http.Request, lb *lib.Loa
 		w.Write([]byte("No host available"))
 		return
 	}
+	lb.LastHostIndexMu.Lock()
+	defer lb.LastHostIndexMu.Unlock()
 	lb.LastHostIndex++
 	if lb.LastHostIndex >= len(validHosts) {
 		lb.LastHostIndex = 0
@@ -135,6 +147,8 @@ func HandleRoundRobinRequest(w http.ResponseWriter, r *http.Request, lb *lib.Loa
 
 // Actual implementation of the round robin algorithm
 func HandleRandomRequest(w http.ResponseWriter, r *http.Request, lb *lib.LoadBalancer) {
+	lb.DomainHostsMu.Lock()
+	defer lb.DomainHostsMu.Unlock()
 	hosts, err := MatchHostList(r, lb)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
