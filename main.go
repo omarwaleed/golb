@@ -52,6 +52,7 @@ func main() {
 	}
 }
 
+// Start a listener for HTTP requests
 func ListenInsecure(lb *lib.LoadBalancer) {
 	err := http.ListenAndServe(":80", HandleRequestInsecure(lb))
 	if err != nil {
@@ -59,6 +60,7 @@ func ListenInsecure(lb *lib.LoadBalancer) {
 	}
 }
 
+// Start a listener for HTTPS requests
 func ListenSecure(lb *lib.LoadBalancer) {
 	err := http.ListenAndServe(":443", HandleRequestSecure(lb))
 	if err != nil {
@@ -66,6 +68,7 @@ func ListenSecure(lb *lib.LoadBalancer) {
 	}
 }
 
+// Handle HTTP requests
 func HandleRequestInsecure(lb *lib.LoadBalancer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if lb.ForceHTTPS {
@@ -79,6 +82,7 @@ func HandleRequestInsecure(lb *lib.LoadBalancer) http.Handler {
 	})
 }
 
+// Handle HTTPS requests
 func HandleRequestSecure(lb *lib.LoadBalancer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch lb.DistributionType {
@@ -94,12 +98,14 @@ func HandleRequestSecure(lb *lib.LoadBalancer) http.Handler {
 	})
 }
 
+// Handle configuration requests for the load balancer
 func HandleConfigRequest(lb *lib.LoadBalancer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// TODO
 	})
 }
 
+// Actual implementation of the round robin algorithm
 func HandleRoundRobinRequest(w http.ResponseWriter, r *http.Request, lb *lib.LoadBalancer) {
 	hosts, err := MatchHostList(r, lb)
 	if err != nil {
@@ -121,6 +127,7 @@ func HandleRoundRobinRequest(w http.ResponseWriter, r *http.Request, lb *lib.Loa
 	http.Redirect(w, r, r.URL.Scheme+"//"+host.IPAddress, http.StatusFound)
 }
 
+// Actual implementation of the round robin algorithm
 func HandleRandomRequest(w http.ResponseWriter, r *http.Request, lb *lib.LoadBalancer) {
 	hosts, err := MatchHostList(r, lb)
 	if err != nil {
@@ -158,6 +165,7 @@ func MatchHostList(r *http.Request, lb *lib.LoadBalancer) (*[]lib.Host, error) {
 	return nil, errors.New("no hosts found")
 }
 
+// Return only the hosts that are up
 func GetValidHosts(hosts []lib.Host) []lib.Host {
 	validHosts := make([]lib.Host, 0)
 	for _, host := range hosts {
