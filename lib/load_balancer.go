@@ -1,5 +1,7 @@
 package lib
 
+import "sync"
+
 type DistributionType string
 
 const (
@@ -8,10 +10,15 @@ const (
 )
 
 type LoadBalancer struct {
-	DomainHosts      map[string][]Host
 	DistributionType DistributionType
 	ForceHTTPS       bool
 	Sticky           bool
+
+	DomainHostsMu sync.RWMutex
+	DomainHosts   map[string][]Host
+
+	LastHostIndexMu sync.RWMutex
+	LastHostIndex   int
 }
 
 func NewLoadBalancer(distributionType DistributionType, forceHTTPS bool, sticky bool) *LoadBalancer {
