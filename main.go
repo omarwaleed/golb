@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"log"
+	"math/rand"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -100,11 +101,47 @@ func HandleConfigRequest(lb *lib.LoadBalancer) http.Handler {
 }
 
 func HandleRoundRobinRequest(w http.ResponseWriter, r *http.Request, lb *lib.LoadBalancer) {
-	// TODO
+	hosts, err := MatchHostList(r, lb)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Bad gateway"))
+		return
+	}
+	validHosts := GetValidHosts(*hosts)
+	if len(validHosts) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("No host available"))
+		return
+	}
+	lb.LastHostIndex++
+	if lb.LastHostIndex >= len(validHosts) {
+		lb.LastHostIndex = 0
+	}
+	host := validHosts[lb.LastHostIndex]
+	http.Redirect(w, r, r.URL.Scheme+"//"+host.IPAddress, http.StatusFound)
 }
 
 func HandleRandomRequest(w http.ResponseWriter, r *http.Request, lb *lib.LoadBalancer) {
-	// TODO
+	hosts, err := MatchHostList(r, lb)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Bad gateway"))
+		return
+	}
+	validHosts := GetValidHosts(*hosts)
+	if len(validHosts) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("No host available"))
+		return
+	}
+	var host lib.Host
+	if len(validHosts) == 1 {
+		host = (validHosts)[0]
+	} else {
+		rand.Intn(len(validHosts))
+		host = validHosts[rand.Intn(len(validHosts))]
+	}
+	http.Redirect(w, r, r.URL.Scheme+"//"+host.IPAddress, http.StatusFound)
 }
 
 func MatchHostList(r *http.Request, lb *lib.LoadBalancer) (*[]lib.Host, error) {
@@ -119,4 +156,14 @@ func MatchHostList(r *http.Request, lb *lib.LoadBalancer) (*[]lib.Host, error) {
 		return &hosts, nil
 	}
 	return nil, errors.New("no hosts found")
+}
+
+func GetValidHosts(hosts []lib.Host) []lib.Host {
+	validHosts := make([]lib.Host, 0)
+	for _, host := range hosts {
+		if host.Status == lib.HostStatusUp {
+			validHosts = append(validHosts, host)
+		}
+	}
+	return validHosts
 }
