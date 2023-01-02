@@ -1,4 +1,8 @@
-# Features
+# GOLB
+
+A loadbalancer written entirely in go
+
+## Features
 
 - [ ] Round robin distribution
 - [ ] Randomized distribution
@@ -12,3 +16,7 @@
 - [ ] Graphana metrics chart for history
 - [ ] Graph of currently available hosts with live stream when a request is sent
 - [ ] Helm chart
+
+## License
+
+### MIT LICENSE
