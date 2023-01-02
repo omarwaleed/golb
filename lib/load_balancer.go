@@ -1,6 +1,9 @@
 package lib
 
-import "sync"
+import (
+	"errors"
+	"sync"
+)
 
 type DistributionType string
 
@@ -22,6 +25,10 @@ type LoadBalancer struct {
 }
 
 func NewLoadBalancer(distributionType DistributionType, forceHTTPS bool, sticky bool) *LoadBalancer {
+	_, err := ParseDistrubutionType(string(distributionType))
+	if err != nil {
+		panic(err)
+	}
 	return &LoadBalancer{
 		DomainHosts:      make(map[string][]Host),
 		DistributionType: distributionType,
@@ -37,6 +44,6 @@ func ParseDistrubutionType(distributionType string) (DistributionType, error) {
 	case "random":
 		return DistributionTypeRandom, nil
 	default:
-		return "", nil
+		return "", errors.New("invalid distribution type")
 	}
 }

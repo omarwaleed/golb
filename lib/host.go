@@ -24,10 +24,10 @@ const (
 )
 
 func NewHost(ipAddress string, healthCheckRoute string, healthCheckInterval int) (*Host, error) {
-	if !strings.HasPrefix("/", healthCheckRoute) {
+	if !strings.HasPrefix(healthCheckRoute, "/") {
 		return nil, errors.New("health check route must start with a slash")
 	}
-	if strings.HasPrefix("//", healthCheckRoute) {
+	if strings.HasPrefix(healthCheckRoute, "//") {
 		return nil, errors.New("health check route must not start with two slashes")
 	}
 	if healthCheckInterval < 1 {
