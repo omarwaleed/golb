@@ -29,3 +29,14 @@ func NewLoadBalancer(distributionType DistributionType, forceHTTPS bool, sticky 
 		Sticky:           sticky,
 	}
 }
+
+func ParseDistrubutionType(distributionType string) (DistributionType, error) {
+	switch distributionType {
+	case "round_robin":
+		return DistributionTypeRoundRobin, nil
+	case "random":
+		return DistributionTypeRandom, nil
+	default:
+		return "", nil
+	}
+}
