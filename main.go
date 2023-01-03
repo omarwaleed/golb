@@ -1,6 +1,8 @@
 package main
 
 import (
+	crand "crypto/rand"
+	"encoding/base64"
 	"errors"
 	"flag"
 	"log"
@@ -13,6 +15,7 @@ import (
 
 	lib "github.com/omarwaleed/golb/lib"
 	"golang.org/x/crypto/acme/autocert"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {
@@ -24,6 +27,7 @@ func main() {
 	typeConfig := flag.String("type", string(lib.DistributionTypeRoundRobin), "Type of load balancing to use. Defaults to round_robin")
 	forceHttpsConfig := flag.Bool("force-https", false, "Force HTTPS on all requests")
 	stickyConfig := flag.Bool("sticky", false, "Enable sticky sessions")
+	dashboardPasswordConfig := flag.String("dashboard-password", "", "Password to use for dashboard")
 
 	flag.Parse()
 
@@ -53,6 +57,26 @@ func main() {
 		domains := strings.Split(*certDomains, ",")
 		lb.CertDomains = domains
 	}
+
+	var dashboardPassword string
+	if len(*dashboardPasswordConfig) == 0 {
+		generatedPassword := make([]byte, 16)
+		_, err = crand.Read(generatedPassword)
+		if err != nil {
+			panic(err)
+		}
+		generatedPasswordbase64 := make([]byte, len(generatedPassword)*2)
+		base64.URLEncoding.Encode(generatedPasswordbase64, generatedPassword)
+		dashboardPassword = string(generatedPasswordbase64)
+		log.Println("Generated dashboard password:", dashboardPassword)
+	} else {
+		dashboardPassword = *dashboardPasswordConfig
+	}
+	encryptedPassword, err := bcrypt.GenerateFromPassword([]byte(dashboardPassword), 10)
+	if err != nil {
+		panic(err)
+	}
+	lb.DashboardPassword = encryptedPassword
 
 	// Initialize HTTP and HTTPS listeners
 	go ListenInsecure(lb)

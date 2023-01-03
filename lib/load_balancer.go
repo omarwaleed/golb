@@ -17,9 +17,10 @@ const (
 )
 
 type LoadBalancer struct {
-	DistributionType DistributionType
-	ForceHTTPS       bool
-	CertDomains      []string
+	DistributionType  DistributionType
+	ForceHTTPS        bool
+	CertDomains       []string
+	DashboardPassword []byte
 
 	Sticky                     bool
 	StickySessionResetInterval int // the amount of seconds to hold a sticky session before an IP address is forgotten
