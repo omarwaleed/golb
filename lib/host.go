@@ -8,7 +8,7 @@ import (
 )
 
 type Host struct {
-	IPAddress           string
+	IPAddress           string // IP address of host including optional port
 	HealthCheckRoute    string
 	HealthCheckInterval int
 	Status              HostStatus
