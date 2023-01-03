@@ -134,6 +134,8 @@ func HandleRequestSecure(lb *lib.LoadBalancer) http.Handler {
 func HandleConfigRequest(lb *lib.LoadBalancer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// TODO
+		w.WriteHeader(http.StatusNotImplemented)
+		w.Write([]byte("Not implemented"))
 	})
 }
 
