@@ -31,22 +31,24 @@ func main() {
 
 	// Initialize load balancer
 	lb := lib.NewLoadBalancer(distributionType, *forceHttpsConfig, *stickyConfig)
-	hostStrings := strings.Split(*hostsConfig, ",")
-	for _, hostString := range hostStrings {
-		hostSplit := strings.Split(hostString, "=")
-		if len(hostSplit) != 2 {
-			panic("Invalid host configuration")
+	if len(*hostsConfig) > 0 {
+		hostStrings := strings.Split(*hostsConfig, ",")
+		for _, hostString := range hostStrings {
+			hostSplit := strings.Split(hostString, "=")
+			if len(hostSplit) != 2 {
+				panic("Invalid host configuration")
+			}
+			domainHosts, ok := lb.DomainHosts[hostSplit[0]]
+			if !ok {
+				domainHosts = make([]lib.Host, 0)
+			}
+			host, err := lib.NewHost(hostSplit[1], "/", 30)
+			if err != nil {
+				panic(err)
+			}
+			domainHosts = append(domainHosts, *host)
+			lb.DomainHosts[hostSplit[0]] = domainHosts
 		}
-		domainHosts, ok := lb.DomainHosts[hostSplit[0]]
-		if !ok {
-			domainHosts = make([]lib.Host, 0)
-		}
-		host, err := lib.NewHost(hostSplit[1], "/", 30)
-		if err != nil {
-			panic(err)
-		}
-		domainHosts = append(domainHosts, *host)
-		lb.DomainHosts[hostSplit[0]] = domainHosts
 	}
 
 	// Initialize HTTP and HTTPS listeners
@@ -60,6 +62,7 @@ func main() {
 		Addr:    ":" + strconv.Itoa(*configPort),
 		Handler: configMux,
 	}
+	log.Println("Load balancer started. Config server listening on port", *configPort)
 	err = configServer.ListenAndServe()
 	if err != nil {
 		log.Fatalln(err)
