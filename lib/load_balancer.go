@@ -123,6 +123,30 @@ func (lb *LoadBalancer) expireStickySession(key ipAddressWithPrefix) {
 	delete(lb.StickySessionMemory, key)
 }
 
+func (lb *LoadBalancer) GetHosts(domain string) []Host {
+	return lb.DomainHosts[domain]
+}
+
+func (lb *LoadBalancer) AddHost(domain string, host *Host) error {
+	domainHosts, ok := lb.DomainHosts[domain]
+	if !ok {
+		if !ok {
+			domainHosts = make([]Host, 0)
+		}
+	}
+	lb.DomainHosts[domain] = append(domainHosts, *host)
+	err := host.StartHealthCheck()
+	return err
+}
+
+func (lb *LoadBalancer) RemoveHost(domain string, hostIndex int) {
+	lb.DomainHostsMu.Lock()
+	defer lb.DomainHostsMu.Unlock()
+	host := lb.DomainHosts[domain][hostIndex]
+	host.StopHealthCheck()
+	lb.DomainHosts[domain] = append(lb.DomainHosts[domain][:hostIndex], lb.DomainHosts[domain][hostIndex+1:]...)
+}
+
 func (lb *LoadBalancer) GetRateLimit() uint32 {
 	return lb.rateLimitPerMinute
 }

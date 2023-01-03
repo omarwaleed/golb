@@ -38,16 +38,11 @@ func main() {
 			if len(hostSplit) != 2 {
 				panic("Invalid host configuration")
 			}
-			domainHosts, ok := lb.DomainHosts[hostSplit[0]]
-			if !ok {
-				domainHosts = make([]lib.Host, 0)
-			}
 			host, err := lib.NewHost(hostSplit[1], "/", 30)
 			if err != nil {
 				panic(err)
 			}
-			domainHosts = append(domainHosts, *host)
-			lb.DomainHosts[hostSplit[0]] = domainHosts
+			lb.AddHost(hostSplit[0], host)
 		}
 	}
 
