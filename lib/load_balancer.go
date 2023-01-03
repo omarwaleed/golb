@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -16,8 +17,9 @@ const (
 )
 
 type LoadBalancer struct {
-	DistributionType           DistributionType
-	ForceHTTPS                 bool
+	DistributionType DistributionType
+	ForceHTTPS       bool
+
 	Sticky                     bool
 	StickySessionResetInterval int // the amount of seconds to hold a sticky session before an IP address is forgotten
 	StickySessionMemoryMu      sync.RWMutex
@@ -29,7 +31,16 @@ type LoadBalancer struct {
 	LastHostIndexMu sync.RWMutex
 	LastHostIndex   int
 
+	rateLimitPerMinute      uint32                         // Number of allowed requests per minute. 0 means no rate limit
+	ipAddressToRequestCount map[ipAddress]ipAddressRequest // Number of requests per IP address
+
 	LogChan chan LogEntry
+}
+
+type ipAddress string
+type ipAddressRequest struct {
+	Count      atomic.Uint32
+	ResetTimer *time.Ticker
 }
 
 type ipAddressWithPrefix string // ipAddressWithPrefix is the IP address with the prefix separated with an underscore
@@ -110,6 +121,45 @@ func (lb *LoadBalancer) expireStickySession(key ipAddressWithPrefix) {
 	lb.StickySessionMemoryMu.Lock()
 	defer lb.StickySessionMemoryMu.Unlock()
 	delete(lb.StickySessionMemory, key)
+}
+
+func (lb *LoadBalancer) GetRateLimit() uint32 {
+	return lb.rateLimitPerMinute
+}
+
+func (lb *LoadBalancer) SetRateLimit(limit uint32) {
+	lb.rateLimitPerMinute = limit
+}
+
+func (lb *LoadBalancer) CheckRateLimit(ipAddress ipAddress) bool {
+	if lb.rateLimitPerMinute == 0 {
+		return true
+	}
+	val, ok := lb.ipAddressToRequestCount[ipAddress]
+	if !ok {
+		lb.ipAddressToRequestCount[ipAddress] = ipAddressRequest{
+			Count:      atomic.Uint32{},
+			ResetTimer: time.NewTicker(time.Minute),
+		}
+		count := lb.ipAddressToRequestCount[ipAddress].Count
+		count.Add(1)
+		go lb.resetRequestCount(ipAddress)
+		return true
+	}
+	if val.Count.Load() >= lb.rateLimitPerMinute {
+		return false
+	}
+	val.Count.Add(1)
+	return true
+}
+
+func (lb *LoadBalancer) resetRequestCount(ipAddress ipAddress) {
+	val, ok := lb.ipAddressToRequestCount[ipAddress]
+	if !ok {
+		return
+	}
+	<-val.ResetTimer.C
+	val.Count.Store(0)
 }
 
 // Starts a goroutine that listens on the log channel and logs the messages with an optional writer
