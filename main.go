@@ -9,14 +9,17 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	lib "github.com/omarwaleed/golb/lib"
+	"golang.org/x/crypto/acme/autocert"
 )
 
 func main() {
 
 	// Define flags
 	configPort := flag.Int("config-port", 8080, "Port to listen on for configuration requests")
+	certDomains := flag.String("cert-domains", "", "Comma-separated list of domains to use for TLS certificate")
 	hostsConfig := flag.String("hosts", "", "Comma-separated list of domain regex to host ex. *.example.com=1.2.3.4")
 	typeConfig := flag.String("type", string(lib.DistributionTypeRoundRobin), "Type of load balancing to use. Defaults to round_robin")
 	forceHttpsConfig := flag.Bool("force-https", false, "Force HTTPS on all requests")
@@ -46,6 +49,11 @@ func main() {
 		}
 	}
 
+	if len(*certDomains) > 0 {
+		domains := strings.Split(*certDomains, ",")
+		lb.CertDomains = domains
+	}
+
 	// Initialize HTTP and HTTPS listeners
 	go ListenInsecure(lb)
 	go ListenSecure(lb)
@@ -66,6 +74,7 @@ func main() {
 
 // Start a listener for HTTP requests
 func ListenInsecure(lb *lib.LoadBalancer) {
+	log.Println("Listening on port 80")
 	err := http.ListenAndServe(":80", HandleRequestInsecure(lb))
 	if err != nil {
 		log.Fatalln(err)
@@ -74,6 +83,15 @@ func ListenInsecure(lb *lib.LoadBalancer) {
 
 // Start a listener for HTTPS requests
 func ListenSecure(lb *lib.LoadBalancer) {
+	if len(lb.CertDomains) != 0 {
+		log.Println("Listening on port 443 with AutoTLS for domains", lb.CertDomains)
+		err := http.Serve(autocert.NewListener(lb.CertDomains...), HandleRequestSecure(lb))
+		if err != nil {
+			log.Fatalln(err)
+		}
+		return
+	}
+	log.Println("Listening on port 443")
 	err := http.ListenAndServe(":443", HandleRequestSecure(lb))
 	if err != nil {
 		log.Fatalln(err)
@@ -83,6 +101,7 @@ func ListenSecure(lb *lib.LoadBalancer) {
 // Handle HTTP requests
 func HandleRequestInsecure(lb *lib.LoadBalancer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Println("Received request on port 80", time.Now(), r.URL.String())
 		if lb.ForceHTTPS {
 			pathPrefix := ""
 			if strings.HasPrefix(r.URL.String(), "/") {
@@ -97,6 +116,7 @@ func HandleRequestInsecure(lb *lib.LoadBalancer) http.Handler {
 // Handle HTTPS requests
 func HandleRequestSecure(lb *lib.LoadBalancer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Println("Received request on port 443", time.Now(), r.URL.String())
 		switch lb.DistributionType {
 		case lib.DistributionTypeRoundRobin:
 			HandleRoundRobinRequest(w, r, lb)
