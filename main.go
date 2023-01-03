@@ -110,6 +110,16 @@ func HandleRequestInsecure(lb *lib.LoadBalancer) http.Handler {
 			http.Redirect(w, r, "https://"+r.Host+pathPrefix+r.URL.String(), http.StatusMovedPermanently)
 			return
 		}
+		switch lb.DistributionType {
+		case lib.DistributionTypeRoundRobin:
+			HandleRoundRobinRequest(w, r, lb)
+		case lib.DistributionTypeRandom:
+			HandleRandomRequest(w, r, lb)
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Bad gateway"))
+			return
+		}
 	})
 }
 
@@ -193,13 +203,16 @@ func HandleRandomRequest(w http.ResponseWriter, r *http.Request, lb *lib.LoadBal
 
 func MatchHostList(r *http.Request, lb *lib.LoadBalancer) (*[]lib.Host, error) {
 	for key, hosts := range lb.DomainHosts {
-		match, err := regexp.Match(key, []byte(r.Host))
+		modifiedKey := strings.Replace(key, "*", "(.)*", -1)
+		match, err := regexp.Match(modifiedKey, []byte(r.Host))
+		log.Println("Trying to match", key, "modified to", modifiedKey, "with", r.Host, "result", match)
 		if err != nil {
 			return nil, err
 		}
 		if !match {
 			continue
 		}
+		log.Println("Matched key", key)
 		return &hosts, nil
 	}
 	return nil, errors.New("no hosts found")
