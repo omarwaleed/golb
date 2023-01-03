@@ -120,17 +120,33 @@ func (lb *LoadBalancer) StartLogger(w *io.WriteCloser) {
 		}
 		for {
 			entry, ok := <-lb.LogChan
-			if !ok {
-				log.Println("SYSTEM: Log channel closed")
-				if w != nil {
-					(*w).Write([]byte("SYSTEM: Log channel closed"))
-				}
-				return
-			}
-			log.Println(string(entry.Type) + " : " + entry.Message)
-			if w != nil {
-				(*w).Write([]byte(string(entry.Type) + " : " + entry.Message))
-			}
+			writeLogEntry(entry, ok, w)
 		}
 	}()
+}
+
+func (lb *LoadBalancer) CloseLogger() {
+	var e LogEntry
+	e, ok := <-lb.LogChan
+	if !ok {
+		log.Println("SYSTEM: Log channel already closed")
+		return
+	}
+	writeLogEntry(e, ok, nil)
+	close(lb.LogChan)
+}
+
+// Writes a log entry to the log and the writer if it is not nil
+func writeLogEntry(entry LogEntry, ok bool, w *io.WriteCloser) {
+	if !ok {
+		log.Println("SYSTEM: Log channel closed")
+		if w != nil {
+			(*w).Write([]byte("SYSTEM: Log channel closed"))
+		}
+		return
+	}
+	log.Println(string(entry.Type) + " : " + entry.Message)
+	if w != nil {
+		(*w).Write([]byte(string(entry.Type) + " : " + entry.Message))
+	}
 }
