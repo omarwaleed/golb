@@ -53,11 +53,13 @@ func main() {
 		}
 	}
 
+	// Set certificate domains
 	if len(*certDomains) > 0 {
 		domains := strings.Split(*certDomains, ",")
 		lb.CertDomains = domains
 	}
 
+	// Set dashboard password
 	var dashboardPassword string
 	if len(*dashboardPasswordConfig) == 0 {
 		generatedPassword := make([]byte, 16)
@@ -183,7 +185,7 @@ func HandleRoundRobinRequest(w http.ResponseWriter, r *http.Request, lb *lib.Loa
 		w.Write([]byte("Bad gateway"))
 		return
 	}
-	validHosts := GetValidHosts(*hosts)
+	validHosts := GetValidHosts(hosts)
 	if len(validHosts) == 0 {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("No host available"))
@@ -209,13 +211,13 @@ func HandleRandomRequest(w http.ResponseWriter, r *http.Request, lb *lib.LoadBal
 		w.Write([]byte("Bad gateway"))
 		return
 	}
-	validHosts := GetValidHosts(*hosts)
+	validHosts := GetValidHosts(hosts)
 	if len(validHosts) == 0 {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("No host available"))
 		return
 	}
-	var host lib.Host
+	var host *lib.Host
 	if len(validHosts) == 1 {
 		host = (validHosts)[0]
 	} else {
@@ -225,7 +227,7 @@ func HandleRandomRequest(w http.ResponseWriter, r *http.Request, lb *lib.LoadBal
 	http.Redirect(w, r, r.URL.Scheme+"//"+host.IPAddress, http.StatusFound)
 }
 
-func MatchHostList(r *http.Request, lb *lib.LoadBalancer) (*[]lib.Host, error) {
+func MatchHostList(r *http.Request, lb *lib.LoadBalancer) ([]*lib.Host, error) {
 	for key, hosts := range lb.DomainHosts {
 		modifiedKey := strings.Replace(key, "*", "(.)*", -1)
 		match, err := regexp.Match(modifiedKey, []byte(r.Host))
@@ -237,14 +239,14 @@ func MatchHostList(r *http.Request, lb *lib.LoadBalancer) (*[]lib.Host, error) {
 			continue
 		}
 		log.Println("Matched key", key)
-		return &hosts, nil
+		return hosts, nil
 	}
 	return nil, errors.New("no hosts found")
 }
 
 // Return only the hosts that are up
-func GetValidHosts(hosts []lib.Host) []lib.Host {
-	validHosts := make([]lib.Host, 0)
+func GetValidHosts(hosts []*lib.Host) []*lib.Host {
+	validHosts := make([]*lib.Host, 0)
 	for _, host := range hosts {
 		if host.Status == lib.HostStatusUp {
 			validHosts = append(validHosts, host)

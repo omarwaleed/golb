@@ -28,7 +28,7 @@ type LoadBalancer struct {
 	StickySessionMemory        map[ipAddressWithPrefix]stickySessionMemoryEntry
 
 	DomainHostsMu sync.RWMutex
-	DomainHosts   map[string][]Host
+	DomainHosts   map[string][]*Host
 
 	LastHostIndexMu sync.RWMutex
 	LastHostIndex   int
@@ -59,7 +59,7 @@ func NewLoadBalancer(distributionType DistributionType, forceHTTPS bool, sticky 
 	}
 	logChan := make(chan LogEntry, 1024)
 	lb := &LoadBalancer{
-		DomainHosts:      make(map[string][]Host),
+		DomainHosts:      make(map[string][]*Host),
 		DistributionType: distributionType,
 		ForceHTTPS:       forceHTTPS,
 		Sticky:           sticky,
@@ -126,17 +126,23 @@ func (lb *LoadBalancer) expireStickySession(key ipAddressWithPrefix) {
 }
 
 func (lb *LoadBalancer) GetHosts(domain string) []Host {
-	return lb.DomainHosts[domain]
+	var domainHosts []Host
+	lb.DomainHostsMu.Lock()
+	defer lb.DomainHostsMu.Unlock()
+	for _, val := range lb.DomainHosts[domain] {
+		domainHosts = append(domainHosts, *val)
+	}
+	return domainHosts
 }
 
 func (lb *LoadBalancer) AddHost(domain string, host *Host) error {
 	domainHosts, ok := lb.DomainHosts[domain]
 	if !ok {
 		if !ok {
-			domainHosts = make([]Host, 0)
+			domainHosts = make([]*Host, 0)
 		}
 	}
-	lb.DomainHosts[domain] = append(domainHosts, *host)
+	lb.DomainHosts[domain] = append(domainHosts, host)
 	err := host.StartHealthCheck()
 	return err
 }
