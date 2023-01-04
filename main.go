@@ -5,9 +5,11 @@ import (
 	"encoding/base64"
 	"errors"
 	"flag"
+	"io"
 	"log"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -228,7 +230,28 @@ func HandleRandomRequest(w http.ResponseWriter, r *http.Request, lb *lib.LoadBal
 }
 
 func DoRequest(w http.ResponseWriter, r *http.Request, host *lib.Host) {
-	http.Redirect(w, r, r.URL.Scheme+"//"+host.IPAddress, http.StatusFound)
+	// http.Redirect(w, r, r.URL.Scheme+"//"+host.IPAddress, http.StatusFound)
+	r.URL = &url.URL{
+		Scheme: "http",
+		Host:   host.IPAddress,
+		Path:   r.URL.Path,
+	}
+	r.RequestURI = ""
+	resp, err := http.DefaultClient.Do(r)
+	if err != nil {
+		log.Println("do request error:", err)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Bad gateway"))
+		return
+	}
+	defer resp.Body.Close()
+	for key, values := range resp.Header {
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
 }
 
 func MatchHostList(r *http.Request, lb *lib.LoadBalancer) ([]*lib.Host, error) {
