@@ -4,14 +4,14 @@ A loadbalancer written entirely in go
 
 ## Features
 
-- [ ] Round robin distribution
-- [ ] Randomized distribution
+- [x] Round robin distribution
+- [x] Randomized distribution
 - [ ] Context aware (checks if server completed a response) (client needs to be built)
 - [ ] Generate SSL certificate for a domain
 - [ ] Sticky sessions
-- [ ] (novel feature) copy request to client instead of redirecting
+- [x] copy request to client instead of redirecting
 - [ ] Host based routing
-- [ ] Health check
+- [x] Health check
 - [ ] Request logger
 - [ ] Rate limiter
 - [ ] Graphana metrics chart for history
