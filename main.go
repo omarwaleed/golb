@@ -198,7 +198,7 @@ func HandleRoundRobinRequest(w http.ResponseWriter, r *http.Request, lb *lib.Loa
 		lb.LastHostIndex = 0
 	}
 	host := validHosts[lb.LastHostIndex]
-	http.Redirect(w, r, r.URL.Scheme+"//"+host.IPAddress, http.StatusFound)
+	DoRequest(w, r, host)
 }
 
 // Actual implementation of the round robin algorithm
@@ -224,6 +224,10 @@ func HandleRandomRequest(w http.ResponseWriter, r *http.Request, lb *lib.LoadBal
 		rand.Intn(len(validHosts))
 		host = validHosts[rand.Intn(len(validHosts))]
 	}
+	DoRequest(w, r, host)
+}
+
+func DoRequest(w http.ResponseWriter, r *http.Request, host *lib.Host) {
 	http.Redirect(w, r, r.URL.Scheme+"//"+host.IPAddress, http.StatusFound)
 }
 
