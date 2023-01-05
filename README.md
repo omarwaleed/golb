@@ -6,11 +6,12 @@ A loadbalancer written entirely in go
 
 - [x] Round robin distribution
 - [x] Randomized distribution
-- [ ] Context aware (checks if server completed a response) (client needs to be built)
+- [ ] Context aware (checks if server completed a response)
+- [ ] Context aware (Utilization - CPU/Memory) _(Requires Client)_
 - [ ] Generate SSL certificate for a domain
 - [ ] Sticky sessions
-- [x] copy request to client instead of redirecting
-- [ ] Host based routing
+- [x] Copy request to client instead of redirecting
+- [x] Host based routing
 - [x] Health check
 - [ ] Request logger
 - [ ] Rate limiter
