@@ -255,7 +255,11 @@ func DoRequest(w http.ResponseWriter, r *http.Request, host *Host) {
 
 func MatchHostList(r *http.Request, lb *LoadBalancer) ([]*Host, error) {
 	for key, hosts := range lb.DomainHosts {
-		modifiedKey := strings.Replace(key, "*", "(.)*", -1)
+		splitKey := strings.Split(key, "*")
+		for i, part := range splitKey {
+			splitKey[i] = regexp.QuoteMeta(part)
+		}
+		modifiedKey := strings.Join(splitKey, ".*")
 		match, err := regexp.Match(modifiedKey, []byte(r.Host))
 		log.Println("Trying to match", key, "modified to", modifiedKey, "with", r.Host, "result", match)
 		if err != nil {
