@@ -5,11 +5,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"flag"
-	"io"
 	"log"
 	"math/rand"
 	"net/http"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -22,13 +20,14 @@ import (
 func main() {
 
 	// Define flags
-	configPort := flag.Int("config-port", 8080, "Port to listen on for configuration requests")
+	configPort := flag.Int("config-port", 8080, "Port to listen on for configuration requests. Defaults to 8080")
 	certDomains := flag.String("cert-domains", "", "Comma-separated list of domains to use for TLS certificate")
 	hostsConfig := flag.String("hosts", "", "Comma-separated list of domain regex to host ex. *.example.com=1.2.3.4")
 	typeConfig := flag.String("type", string(DistributionTypeRoundRobin), "Type of load balancing to use. Defaults to round_robin")
-	forceHttpsConfig := flag.Bool("force-https", false, "Force HTTPS on all requests")
-	stickyConfig := flag.Bool("sticky", false, "Enable sticky sessions")
-	dashboardPasswordConfig := flag.String("dashboard-password", "", "Password to use for dashboard")
+	forceHttpsConfig := flag.Bool("force-https", false, "Force HTTPS on all requests. Defaults to false")
+	rateLimitConfig := flag.Int("rate-limit", 0, "Rate limit requests per minute. 0 means no rate limit. Defaults to 0")
+	stickyConfig := flag.Bool("sticky", false, "Enable sticky sessions. Defaults to false")
+	dashboardPasswordConfig := flag.String("dashboard-password", "", "Password to use for dashboard. Defaults to random password printed to console")
 
 	flag.Parse()
 
@@ -58,6 +57,10 @@ func main() {
 	if len(*certDomains) > 0 {
 		domains := strings.Split(*certDomains, ",")
 		lb.CertDomains = domains
+	}
+
+	if *rateLimitConfig > 0 {
+		lb.SetRateLimit(uint32(*rateLimitConfig))
 	}
 
 	// Set dashboard password
@@ -199,7 +202,7 @@ func HandleRoundRobinRequest(w http.ResponseWriter, r *http.Request, lb *LoadBal
 		lb.LastHostIndex = 0
 	}
 	host := validHosts[lb.LastHostIndex]
-	DoRequest(w, r, host)
+	lb.DoRequest(w, r, host)
 }
 
 // Actual implementation of the round robin algorithm
@@ -225,32 +228,7 @@ func HandleRandomRequest(w http.ResponseWriter, r *http.Request, lb *LoadBalance
 		rand.Intn(len(validHosts))
 		host = validHosts[rand.Intn(len(validHosts))]
 	}
-	DoRequest(w, r, host)
-}
-
-func DoRequest(w http.ResponseWriter, r *http.Request, host *Host) {
-	// http.Redirect(w, r, r.URL.Scheme+"//"+host.IPAddress, http.StatusFound)
-	r.URL = &url.URL{
-		Scheme: "http",
-		Host:   host.IPAddress,
-		Path:   r.URL.Path,
-	}
-	r.RequestURI = ""
-	resp, err := http.DefaultClient.Do(r)
-	if err != nil {
-		log.Println("do request error:", err)
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Bad gateway"))
-		return
-	}
-	defer resp.Body.Close()
-	for key, values := range resp.Header {
-		for _, value := range values {
-			w.Header().Add(key, value)
-		}
-	}
-	w.WriteHeader(resp.StatusCode)
-	io.Copy(w, resp.Body)
+	lb.DoRequest(w, r, host)
 }
 
 func MatchHostList(r *http.Request, lb *LoadBalancer) ([]*Host, error) {

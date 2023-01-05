@@ -4,8 +4,9 @@ import (
 	"errors"
 	"io"
 	"log"
+	"net/http"
+	"net/url"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -33,15 +34,16 @@ type LoadBalancer struct {
 	LastHostIndexMu sync.RWMutex
 	LastHostIndex   int
 
-	rateLimitPerMinute      uint32                         // Number of allowed requests per minute. 0 means no rate limit
-	ipAddressToRequestCount map[ipAddress]ipAddressRequest // Number of requests per IP address
+	rateLimitPerMinute      uint32                          // Number of allowed requests per minute. 0 means no rate limit
+	ipAddressToRequestCount map[ipAddress]*ipAddressRequest // Number of requests per IP address
 
 	LogChan chan LogEntry
 }
 
 type ipAddress string
 type ipAddressRequest struct {
-	Count      atomic.Uint32
+	CountMu    sync.Mutex
+	Count      uint32
 	ResetTimer *time.Ticker
 }
 
@@ -59,11 +61,12 @@ func NewLoadBalancer(distributionType DistributionType, forceHTTPS bool, sticky 
 	}
 	logChan := make(chan LogEntry, 1024)
 	lb := &LoadBalancer{
-		DomainHosts:      make(map[string][]*Host),
-		DistributionType: distributionType,
-		ForceHTTPS:       forceHTTPS,
-		Sticky:           sticky,
-		LogChan:          logChan,
+		DomainHosts:             make(map[string][]*Host),
+		DistributionType:        distributionType,
+		ForceHTTPS:              forceHTTPS,
+		Sticky:                  sticky,
+		ipAddressToRequestCount: make(map[ipAddress]*ipAddressRequest),
+		LogChan:                 logChan,
 	}
 	return lb
 }
@@ -164,24 +167,26 @@ func (lb *LoadBalancer) SetRateLimit(limit uint32) {
 }
 
 func (lb *LoadBalancer) CheckRateLimit(ipAddress ipAddress) bool {
+	log.Println("Checking rate limit of:", lb.rateLimitPerMinute, "for IP address:", ipAddress)
 	if lb.rateLimitPerMinute == 0 {
 		return true
 	}
 	val, ok := lb.ipAddressToRequestCount[ipAddress]
 	if !ok {
-		lb.ipAddressToRequestCount[ipAddress] = ipAddressRequest{
-			Count:      atomic.Uint32{},
+		lb.ipAddressToRequestCount[ipAddress] = &ipAddressRequest{
+			Count:      uint32(1),
 			ResetTimer: time.NewTicker(time.Minute),
 		}
-		count := lb.ipAddressToRequestCount[ipAddress].Count
-		count.Add(1)
 		go lb.resetRequestCount(ipAddress)
 		return true
 	}
-	if val.Count.Load() >= lb.rateLimitPerMinute {
+	val.CountMu.Lock()
+	defer val.CountMu.Unlock()
+	log.Println("Current count:", val.Count)
+	if val.Count >= lb.rateLimitPerMinute {
 		return false
 	}
-	val.Count.Add(1)
+	val.Count += 1
 	return true
 }
 
@@ -191,7 +196,9 @@ func (lb *LoadBalancer) resetRequestCount(ipAddress ipAddress) {
 		return
 	}
 	<-val.ResetTimer.C
-	val.Count.Store(0)
+	val.CountMu.Lock()
+	defer val.CountMu.Unlock()
+	val.Count = 0
 }
 
 // Starts a goroutine that listens on the log channel and logs the messages with an optional writer
@@ -216,6 +223,37 @@ func (lb *LoadBalancer) CloseLogger() {
 	}
 	writeLogEntry(e, ok, nil)
 	close(lb.LogChan)
+}
+
+func (lb *LoadBalancer) DoRequest(w http.ResponseWriter, r *http.Request, host *Host) {
+	// http.Redirect(w, r, r.URL.Scheme+"//"+host.IPAddress, http.StatusFound)
+	allowed := lb.CheckRateLimit(ipAddress(r.RemoteAddr))
+	if !allowed {
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte("Too many requests"))
+		return
+	}
+	r.URL = &url.URL{
+		Scheme: "http",
+		Host:   host.IPAddress,
+		Path:   r.URL.Path,
+	}
+	r.RequestURI = ""
+	resp, err := http.DefaultClient.Do(r)
+	if err != nil {
+		log.Println("do request error:", err)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte("Bad gateway"))
+		return
+	}
+	defer resp.Body.Close()
+	for key, values := range resp.Header {
+		for _, value := range values {
+			w.Header().Add(key, value)
+		}
+	}
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
 }
 
 // Writes a log entry to the log and the writer if it is not nil

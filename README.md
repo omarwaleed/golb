@@ -14,7 +14,7 @@ A loadbalancer written entirely in go
 - [x] Host based routing
 - [x] Health check
 - [ ] Request logger
-- [ ] Rate limiter
+- [x] Rate limiter
 - [ ] Graphana metrics chart for history
 - [ ] Graph of currently available hosts with live stream when a request is sent
 - [ ] Helm chart
