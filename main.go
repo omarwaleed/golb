@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	lib "github.com/omarwaleed/golb/lib"
 	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -26,20 +25,20 @@ func main() {
 	configPort := flag.Int("config-port", 8080, "Port to listen on for configuration requests")
 	certDomains := flag.String("cert-domains", "", "Comma-separated list of domains to use for TLS certificate")
 	hostsConfig := flag.String("hosts", "", "Comma-separated list of domain regex to host ex. *.example.com=1.2.3.4")
-	typeConfig := flag.String("type", string(lib.DistributionTypeRoundRobin), "Type of load balancing to use. Defaults to round_robin")
+	typeConfig := flag.String("type", string(DistributionTypeRoundRobin), "Type of load balancing to use. Defaults to round_robin")
 	forceHttpsConfig := flag.Bool("force-https", false, "Force HTTPS on all requests")
 	stickyConfig := flag.Bool("sticky", false, "Enable sticky sessions")
 	dashboardPasswordConfig := flag.String("dashboard-password", "", "Password to use for dashboard")
 
 	flag.Parse()
 
-	distributionType, err := lib.ParseDistrubutionType(*typeConfig)
+	distributionType, err := ParseDistrubutionType(*typeConfig)
 	if err != nil {
 		panic(err)
 	}
 
 	// Initialize load balancer
-	lb := lib.NewLoadBalancer(distributionType, *forceHttpsConfig, *stickyConfig)
+	lb := NewLoadBalancer(distributionType, *forceHttpsConfig, *stickyConfig)
 	if len(*hostsConfig) > 0 {
 		hostStrings := strings.Split(*hostsConfig, ",")
 		for _, hostString := range hostStrings {
@@ -47,7 +46,7 @@ func main() {
 			if len(hostSplit) != 2 {
 				panic("Invalid host configuration")
 			}
-			host, err := lib.NewHost(hostSplit[1], "/", 30)
+			host, err := NewHost(hostSplit[1], "/", 30)
 			if err != nil {
 				panic(err)
 			}
@@ -101,7 +100,7 @@ func main() {
 }
 
 // Start a listener for HTTP requests
-func ListenInsecure(lb *lib.LoadBalancer) {
+func ListenInsecure(lb *LoadBalancer) {
 	log.Println("Listening on port 80")
 	err := http.ListenAndServe(":80", HandleRequestInsecure(lb))
 	if err != nil {
@@ -110,7 +109,7 @@ func ListenInsecure(lb *lib.LoadBalancer) {
 }
 
 // Start a listener for HTTPS requests
-func ListenSecure(lb *lib.LoadBalancer) {
+func ListenSecure(lb *LoadBalancer) {
 	if len(lb.CertDomains) != 0 {
 		log.Println("Listening on port 443 with AutoTLS for domains", lb.CertDomains)
 		err := http.Serve(autocert.NewListener(lb.CertDomains...), HandleRequestSecure(lb))
@@ -127,7 +126,7 @@ func ListenSecure(lb *lib.LoadBalancer) {
 }
 
 // Handle HTTP requests
-func HandleRequestInsecure(lb *lib.LoadBalancer) http.Handler {
+func HandleRequestInsecure(lb *LoadBalancer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Println("Received request on port 80", time.Now(), r.URL.String())
 		if lb.ForceHTTPS {
@@ -139,9 +138,9 @@ func HandleRequestInsecure(lb *lib.LoadBalancer) http.Handler {
 			return
 		}
 		switch lb.DistributionType {
-		case lib.DistributionTypeRoundRobin:
+		case DistributionTypeRoundRobin:
 			HandleRoundRobinRequest(w, r, lb)
-		case lib.DistributionTypeRandom:
+		case DistributionTypeRandom:
 			HandleRandomRequest(w, r, lb)
 		default:
 			w.WriteHeader(http.StatusBadRequest)
@@ -152,13 +151,13 @@ func HandleRequestInsecure(lb *lib.LoadBalancer) http.Handler {
 }
 
 // Handle HTTPS requests
-func HandleRequestSecure(lb *lib.LoadBalancer) http.Handler {
+func HandleRequestSecure(lb *LoadBalancer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Println("Received request on port 443", time.Now(), r.URL.String())
 		switch lb.DistributionType {
-		case lib.DistributionTypeRoundRobin:
+		case DistributionTypeRoundRobin:
 			HandleRoundRobinRequest(w, r, lb)
-		case lib.DistributionTypeRandom:
+		case DistributionTypeRandom:
 			HandleRandomRequest(w, r, lb)
 		default:
 			w.WriteHeader(http.StatusBadRequest)
@@ -169,7 +168,7 @@ func HandleRequestSecure(lb *lib.LoadBalancer) http.Handler {
 }
 
 // Handle configuration requests for the load balancer
-func HandleConfigRequest(lb *lib.LoadBalancer) http.Handler {
+func HandleConfigRequest(lb *LoadBalancer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// TODO
 		w.WriteHeader(http.StatusNotImplemented)
@@ -178,7 +177,7 @@ func HandleConfigRequest(lb *lib.LoadBalancer) http.Handler {
 }
 
 // Actual implementation of the round robin algorithm
-func HandleRoundRobinRequest(w http.ResponseWriter, r *http.Request, lb *lib.LoadBalancer) {
+func HandleRoundRobinRequest(w http.ResponseWriter, r *http.Request, lb *LoadBalancer) {
 	lb.DomainHostsMu.Lock()
 	defer lb.DomainHostsMu.Unlock()
 	hosts, err := MatchHostList(r, lb)
@@ -204,7 +203,7 @@ func HandleRoundRobinRequest(w http.ResponseWriter, r *http.Request, lb *lib.Loa
 }
 
 // Actual implementation of the round robin algorithm
-func HandleRandomRequest(w http.ResponseWriter, r *http.Request, lb *lib.LoadBalancer) {
+func HandleRandomRequest(w http.ResponseWriter, r *http.Request, lb *LoadBalancer) {
 	lb.DomainHostsMu.Lock()
 	defer lb.DomainHostsMu.Unlock()
 	hosts, err := MatchHostList(r, lb)
@@ -219,7 +218,7 @@ func HandleRandomRequest(w http.ResponseWriter, r *http.Request, lb *lib.LoadBal
 		w.Write([]byte("No host available"))
 		return
 	}
-	var host *lib.Host
+	var host *Host
 	if len(validHosts) == 1 {
 		host = (validHosts)[0]
 	} else {
@@ -229,7 +228,7 @@ func HandleRandomRequest(w http.ResponseWriter, r *http.Request, lb *lib.LoadBal
 	DoRequest(w, r, host)
 }
 
-func DoRequest(w http.ResponseWriter, r *http.Request, host *lib.Host) {
+func DoRequest(w http.ResponseWriter, r *http.Request, host *Host) {
 	// http.Redirect(w, r, r.URL.Scheme+"//"+host.IPAddress, http.StatusFound)
 	r.URL = &url.URL{
 		Scheme: "http",
@@ -254,7 +253,7 @@ func DoRequest(w http.ResponseWriter, r *http.Request, host *lib.Host) {
 	io.Copy(w, resp.Body)
 }
 
-func MatchHostList(r *http.Request, lb *lib.LoadBalancer) ([]*lib.Host, error) {
+func MatchHostList(r *http.Request, lb *LoadBalancer) ([]*Host, error) {
 	for key, hosts := range lb.DomainHosts {
 		modifiedKey := strings.Replace(key, "*", "(.)*", -1)
 		match, err := regexp.Match(modifiedKey, []byte(r.Host))
@@ -272,10 +271,10 @@ func MatchHostList(r *http.Request, lb *lib.LoadBalancer) ([]*lib.Host, error) {
 }
 
 // Return only the hosts that are up
-func GetValidHosts(hosts []*lib.Host) []*lib.Host {
-	validHosts := make([]*lib.Host, 0)
+func GetValidHosts(hosts []*Host) []*Host {
+	validHosts := make([]*Host, 0)
 	for _, host := range hosts {
-		if host.Status == lib.HostStatusUp {
+		if host.Status == HostStatusUp {
 			validHosts = append(validHosts, host)
 		}
 	}
