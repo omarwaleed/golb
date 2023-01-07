@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+type RouteToHost struct {
+	Route string
+	Hosts []*Host
+}
+
 type Host struct {
 	IPAddress           string // IP address of host including optional port
 	HealthCheckRoute    string

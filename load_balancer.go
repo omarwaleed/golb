@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"sync"
 	"time"
+
+	"github.com/kataras/jwt"
 )
 
 type DistributionType string
@@ -22,14 +24,17 @@ type LoadBalancer struct {
 	ForceHTTPS        bool
 	CertDomains       []string
 	DashboardPassword []byte
+	SigningKey        []byte
+	EncryptionKey     []byte
 
 	Sticky                     bool
 	StickySessionResetInterval int // the amount of seconds to hold a sticky session before an IP address is forgotten
-	StickySessionMemoryMu      sync.RWMutex
-	StickySessionMemory        map[ipAddressWithPrefix]stickySessionMemoryEntry
+	// StickySessionMemoryMu      sync.RWMutex
+	// StickySessionMemory        map[ipAddressWithPrefix]*stickySessionMemoryEntry
 
 	DomainHostsMu sync.RWMutex
-	DomainHosts   map[string][]*Host
+	DomainHosts   []RouteToHost
+	// DomainHosts   map[string][]*Host
 
 	LastHostIndexMu sync.RWMutex
 	LastHostIndex   int
@@ -40,6 +45,12 @@ type LoadBalancer struct {
 	LogChan chan LogEntry
 }
 
+type StickySessionClaims struct {
+	Domain string `json:"domain"`
+	Host   string `json:"host"`
+	jwt.Claims
+}
+
 type ipAddress string
 type ipAddressRequest struct {
 	CountMu    sync.Mutex
@@ -47,12 +58,12 @@ type ipAddressRequest struct {
 	ResetTimer *time.Ticker
 }
 
-type ipAddressWithPrefix string // ipAddressWithPrefix is the IP address with the prefix separated with an underscore
+/* type ipAddressWithPrefix string // ipAddressWithPrefix is the IP address with the prefix separated with an underscore
 type stickySessionMemoryEntry struct {
 	Host        *Host
 	LastUsed    time.Time
 	ExpireTimer *time.Timer
-}
+} */
 
 func NewLoadBalancer(distributionType DistributionType, forceHTTPS bool, sticky bool) *LoadBalancer {
 	_, err := ParseDistrubutionType(string(distributionType))
@@ -61,7 +72,7 @@ func NewLoadBalancer(distributionType DistributionType, forceHTTPS bool, sticky 
 	}
 	logChan := make(chan LogEntry, 1024)
 	lb := &LoadBalancer{
-		DomainHosts:             make(map[string][]*Host),
+		DomainHosts:             []RouteToHost{},
 		DistributionType:        distributionType,
 		ForceHTTPS:              forceHTTPS,
 		Sticky:                  sticky,
@@ -82,7 +93,7 @@ func ParseDistrubutionType(distributionType string) (DistributionType, error) {
 	}
 }
 
-func (lb *LoadBalancer) GetStickySessionHost(ipAddress string, prefix string) *Host {
+/* func (lb *LoadBalancer) GetStickySessionHost(ipAddress string, prefix string) *Host {
 	key := ipAddressWithPrefix(ipAddress + "_" + prefix)
 	lb.StickySessionMemoryMu.Lock()
 	defer lb.StickySessionMemoryMu.Unlock()
@@ -91,16 +102,16 @@ func (lb *LoadBalancer) GetStickySessionHost(ipAddress string, prefix string) *H
 		return nil
 	}
 	return entry.Host
-}
+} */
 
-func (lb *LoadBalancer) SetStickySessionHost(ipAddress string, prefix string, host *Host) error {
+/* func (lb *LoadBalancer) SetStickySessionHost(ipAddress string, prefix string, host *Host) error {
 	key := ipAddressWithPrefix(ipAddress + "_" + prefix)
 	lb.StickySessionMemoryMu.Lock()
 	defer lb.StickySessionMemoryMu.Unlock()
 	entry, ok := lb.StickySessionMemory[key]
 	if !ok {
 		timer := time.NewTimer(time.Duration(lb.StickySessionResetInterval) * time.Second)
-		entry = stickySessionMemoryEntry{
+		entry = &stickySessionMemoryEntry{
 			Host:        host,
 			LastUsed:    time.Now(),
 			ExpireTimer: timer,
@@ -111,9 +122,9 @@ func (lb *LoadBalancer) SetStickySessionHost(ipAddress string, prefix string, ho
 		entry.ExpireTimer.Reset(time.Duration(lb.StickySessionResetInterval) * time.Second)
 	}
 	return nil
-}
+} */
 
-func (lb *LoadBalancer) expireStickySession(key ipAddressWithPrefix) {
+/* func (lb *LoadBalancer) expireStickySession(key ipAddressWithPrefix) {
 	entry, ok := lb.StickySessionMemory[key]
 	if !ok {
 		lb.LogChan <- LogEntry{
@@ -126,26 +137,35 @@ func (lb *LoadBalancer) expireStickySession(key ipAddressWithPrefix) {
 	lb.StickySessionMemoryMu.Lock()
 	defer lb.StickySessionMemoryMu.Unlock()
 	delete(lb.StickySessionMemory, key)
-}
+} */
 
 func (lb *LoadBalancer) GetHosts(domain string) []Host {
 	var domainHosts []Host
 	lb.DomainHostsMu.Lock()
 	defer lb.DomainHostsMu.Unlock()
-	for _, val := range lb.DomainHosts[domain] {
-		domainHosts = append(domainHosts, *val)
+	for _, val := range lb.DomainHosts {
+		if val.Route == domain {
+			for _, host := range val.Hosts {
+				domainHosts = append(domainHosts, *host)
+			}
+		}
 	}
 	return domainHosts
 }
 
 func (lb *LoadBalancer) AddHost(domain string, host *Host) error {
-	domainHosts, ok := lb.DomainHosts[domain]
-	if !ok {
-		if !ok {
-			domainHosts = make([]*Host, 0)
+	lb.DomainHostsMu.Lock()
+	defer lb.DomainHostsMu.Unlock()
+	for index, routeToHost := range lb.DomainHosts {
+		if routeToHost.Route == domain {
+			lb.DomainHosts[index].Hosts = append(lb.DomainHosts[index].Hosts, host)
 		}
 	}
-	lb.DomainHosts[domain] = append(domainHosts, host)
+
+	lb.DomainHosts = append(lb.DomainHosts, RouteToHost{
+		Route: domain,
+		Hosts: []*Host{host},
+	})
 	err := host.StartHealthCheck()
 	return err
 }
@@ -153,9 +173,15 @@ func (lb *LoadBalancer) AddHost(domain string, host *Host) error {
 func (lb *LoadBalancer) RemoveHost(domain string, hostIndex int) {
 	lb.DomainHostsMu.Lock()
 	defer lb.DomainHostsMu.Unlock()
-	host := lb.DomainHosts[domain][hostIndex]
-	host.StopHealthCheck()
-	lb.DomainHosts[domain] = append(lb.DomainHosts[domain][:hostIndex], lb.DomainHosts[domain][hostIndex+1:]...)
+	for index, routeToHost := range lb.DomainHosts {
+		if routeToHost.Route == domain {
+			if len(lb.DomainHosts[index].Hosts) <= hostIndex {
+				return // Host index out of range
+			}
+			lb.DomainHosts[index].Hosts[hostIndex].StopHealthCheck()
+			lb.DomainHosts[index].Hosts = append(lb.DomainHosts[index].Hosts[:hostIndex], lb.DomainHosts[index].Hosts[hostIndex+1:]...)
+		}
+	}
 }
 
 func (lb *LoadBalancer) GetRateLimit() uint32 {
