@@ -6,10 +6,10 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
-
-	"github.com/kataras/jwt"
 )
 
 type DistributionType string
@@ -29,29 +29,20 @@ type LoadBalancer struct {
 
 	Sticky                     bool
 	StickySessionResetInterval int // the amount of seconds to hold a sticky session before an IP address is forgotten
-	// StickySessionMemoryMu      sync.RWMutex
-	// StickySessionMemory        map[ipAddressWithPrefix]*stickySessionMemoryEntry
 
 	DomainHostsMu sync.RWMutex
-	DomainHosts   []RouteToHost
-	// DomainHosts   map[string][]*Host
+	DomainHosts   []RoutePrefixToHost
 
 	LastHostIndexMu sync.RWMutex
 	LastHostIndex   int
 
 	rateLimitPerMinute      uint32                          // Number of allowed requests per minute. 0 means no rate limit
-	ipAddressToRequestCount map[ipAddress]*ipAddressRequest // Number of requests per IP address
+	ipAddressToRequestCount map[IPAddress]*ipAddressRequest // Number of requests per IP address
 
 	LogChan chan LogEntry
 }
 
-type StickySessionClaims struct {
-	Domain string `json:"domain"`
-	Host   string `json:"host"`
-	jwt.Claims
-}
-
-type ipAddress string
+type IPAddress string
 type ipAddressRequest struct {
 	CountMu    sync.Mutex
 	Count      uint32
@@ -72,11 +63,11 @@ func NewLoadBalancer(distributionType DistributionType, forceHTTPS bool, sticky 
 	}
 	logChan := make(chan LogEntry, 1024)
 	lb := &LoadBalancer{
-		DomainHosts:             []RouteToHost{},
+		DomainHosts:             []RoutePrefixToHost{},
 		DistributionType:        distributionType,
 		ForceHTTPS:              forceHTTPS,
 		Sticky:                  sticky,
-		ipAddressToRequestCount: make(map[ipAddress]*ipAddressRequest),
+		ipAddressToRequestCount: make(map[IPAddress]*ipAddressRequest),
 		LogChan:                 logChan,
 	}
 	return lb
@@ -93,58 +84,13 @@ func ParseDistrubutionType(distributionType string) (DistributionType, error) {
 	}
 }
 
-/* func (lb *LoadBalancer) GetStickySessionHost(ipAddress string, prefix string) *Host {
-	key := ipAddressWithPrefix(ipAddress + "_" + prefix)
-	lb.StickySessionMemoryMu.Lock()
-	defer lb.StickySessionMemoryMu.Unlock()
-	entry, ok := lb.StickySessionMemory[key]
-	if !ok {
-		return nil
-	}
-	return entry.Host
-} */
-
-/* func (lb *LoadBalancer) SetStickySessionHost(ipAddress string, prefix string, host *Host) error {
-	key := ipAddressWithPrefix(ipAddress + "_" + prefix)
-	lb.StickySessionMemoryMu.Lock()
-	defer lb.StickySessionMemoryMu.Unlock()
-	entry, ok := lb.StickySessionMemory[key]
-	if !ok {
-		timer := time.NewTimer(time.Duration(lb.StickySessionResetInterval) * time.Second)
-		entry = &stickySessionMemoryEntry{
-			Host:        host,
-			LastUsed:    time.Now(),
-			ExpireTimer: timer,
-		}
-		go lb.expireStickySession(key)
-	} else {
-		entry.LastUsed = time.Now()
-		entry.ExpireTimer.Reset(time.Duration(lb.StickySessionResetInterval) * time.Second)
-	}
-	return nil
-} */
-
-/* func (lb *LoadBalancer) expireStickySession(key ipAddressWithPrefix) {
-	entry, ok := lb.StickySessionMemory[key]
-	if !ok {
-		lb.LogChan <- LogEntry{
-			Type:    LogTypeError,
-			Message: "Sticky session memory entry not found",
-		}
-		return
-	}
-	<-entry.ExpireTimer.C
-	lb.StickySessionMemoryMu.Lock()
-	defer lb.StickySessionMemoryMu.Unlock()
-	delete(lb.StickySessionMemory, key)
-} */
-
 func (lb *LoadBalancer) GetHosts(domain string) []Host {
 	var domainHosts []Host
 	lb.DomainHostsMu.Lock()
 	defer lb.DomainHostsMu.Unlock()
-	for _, val := range lb.DomainHosts {
-		if val.Route == domain {
+	for index := range lb.DomainHosts {
+		val := &lb.DomainHosts[index]
+		if val.RoutePrefix == domain {
 			for _, host := range val.Hosts {
 				domainHosts = append(domainHosts, *host)
 			}
@@ -156,15 +102,16 @@ func (lb *LoadBalancer) GetHosts(domain string) []Host {
 func (lb *LoadBalancer) AddHost(domain string, host *Host) error {
 	lb.DomainHostsMu.Lock()
 	defer lb.DomainHostsMu.Unlock()
-	for index, routeToHost := range lb.DomainHosts {
-		if routeToHost.Route == domain {
+	for index := range lb.DomainHosts {
+		routeToHost := &lb.DomainHosts[index]
+		if routeToHost.RoutePrefix == domain {
 			lb.DomainHosts[index].Hosts = append(lb.DomainHosts[index].Hosts, host)
 		}
 	}
 
-	lb.DomainHosts = append(lb.DomainHosts, RouteToHost{
-		Route: domain,
-		Hosts: []*Host{host},
+	lb.DomainHosts = append(lb.DomainHosts, RoutePrefixToHost{
+		RoutePrefix: domain,
+		Hosts:       []*Host{host},
 	})
 	err := host.StartHealthCheck()
 	return err
@@ -173,8 +120,9 @@ func (lb *LoadBalancer) AddHost(domain string, host *Host) error {
 func (lb *LoadBalancer) RemoveHost(domain string, hostIndex int) {
 	lb.DomainHostsMu.Lock()
 	defer lb.DomainHostsMu.Unlock()
-	for index, routeToHost := range lb.DomainHosts {
-		if routeToHost.Route == domain {
+	for index := range lb.DomainHosts {
+		routeToHost := &lb.DomainHosts[index]
+		if routeToHost.RoutePrefix == domain {
 			if len(lb.DomainHosts[index].Hosts) <= hostIndex {
 				return // Host index out of range
 			}
@@ -192,7 +140,7 @@ func (lb *LoadBalancer) SetRateLimit(limit uint32) {
 	lb.rateLimitPerMinute = limit
 }
 
-func (lb *LoadBalancer) CheckRateLimit(ipAddress ipAddress) bool {
+func (lb *LoadBalancer) CheckRateLimit(ipAddress IPAddress) bool {
 	log.Println("Checking rate limit of:", lb.rateLimitPerMinute, "for IP address:", ipAddress)
 	if lb.rateLimitPerMinute == 0 {
 		return true
@@ -216,7 +164,7 @@ func (lb *LoadBalancer) CheckRateLimit(ipAddress ipAddress) bool {
 	return true
 }
 
-func (lb *LoadBalancer) resetRequestCount(ipAddress ipAddress) {
+func (lb *LoadBalancer) resetRequestCount(ipAddress IPAddress) {
 	val, ok := lb.ipAddressToRequestCount[ipAddress]
 	if !ok {
 		return
@@ -253,7 +201,7 @@ func (lb *LoadBalancer) CloseLogger() {
 
 func (lb *LoadBalancer) DoRequest(w http.ResponseWriter, r *http.Request, host *Host) {
 	// http.Redirect(w, r, r.URL.Scheme+"//"+host.IPAddress, http.StatusFound)
-	allowed := lb.CheckRateLimit(ipAddress(r.RemoteAddr))
+	allowed := lb.CheckRateLimit(IPAddress(r.RemoteAddr))
 	if !allowed {
 		w.WriteHeader(http.StatusTooManyRequests)
 		w.Write([]byte("Too many requests"))
@@ -280,6 +228,62 @@ func (lb *LoadBalancer) DoRequest(w http.ResponseWriter, r *http.Request, host *
 	}
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
+}
+
+func (lb *LoadBalancer) MatchHostList(r *http.Request) (*RoutePrefixToHost, error) {
+
+	// Proceed with finding host
+	for index := range lb.DomainHosts {
+		routeTohosts := &lb.DomainHosts[index]
+		key := routeTohosts.RoutePrefix
+		hosts := routeTohosts.Hosts
+		splitKey := strings.Split(key, "*")
+		for i, part := range splitKey {
+			splitKey[i] = regexp.QuoteMeta(part)
+		}
+		modifiedKey := strings.Join(splitKey, ".*")
+		match, err := regexp.Match(modifiedKey, []byte(r.Host))
+		log.Println("Trying to match", key, "modified to", modifiedKey, "with", r.Host, "result", match)
+		if err != nil {
+			return nil, err
+		}
+		if !match {
+			continue
+		}
+		log.Println("Matched key", key)
+		return &RoutePrefixToHost{
+			RoutePrefix:    key,
+			Hosts:          hosts,
+			StickySessions: make(map[IPAddress]*StickySessionEntry),
+		}, nil
+	}
+	return nil, errors.New("no hosts found")
+}
+
+// Sets the sticky session for the given request. If session is already set and hasn't expried, function does nothing
+func (lb *LoadBalancer) SetStickySession(r *http.Request, rpth *RoutePrefixToHost, host *Host) {
+	ipAddress := r.RemoteAddr
+	rpth.StickySessionMu.Lock()
+	defer rpth.StickySessionMu.Unlock()
+	currentSession, ok := rpth.StickySessions[IPAddress(ipAddress)]
+	if ok && time.Now().Before(currentSession.ExpireAt) {
+		return
+	}
+	rpth.StickySessions[IPAddress(ipAddress)] = &StickySessionEntry{
+		Host:     host,
+		ExpireAt: time.Now().Add(time.Duration(lb.StickySessionResetInterval) * time.Second),
+	}
+}
+
+func (lb *LoadBalancer) GetStickySessionHost(r *http.Request, rpth *RoutePrefixToHost) *Host {
+	ipAddress := r.RemoteAddr
+	rpth.StickySessionMu.Lock()
+	defer rpth.StickySessionMu.Unlock()
+	currentSession, ok := rpth.StickySessions[IPAddress(ipAddress)]
+	if ok && time.Now().Before(currentSession.ExpireAt) {
+		return currentSession.Host
+	}
+	return nil
 }
 
 // Writes a log entry to the log and the writer if it is not nil
