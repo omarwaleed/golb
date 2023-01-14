@@ -5,12 +5,20 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
-type RouteToHost struct {
-	Route string
-	Hosts []*Host
+type RoutePrefixToHost struct {
+	RoutePrefix     string
+	Hosts           []*Host
+	StickySessionMu sync.Mutex
+	StickySessions  map[IPAddress]*StickySessionEntry
+}
+
+type StickySessionEntry struct {
+	Host     *Host
+	ExpireAt time.Time
 }
 
 type Host struct {
@@ -85,4 +93,8 @@ func (h *Host) StopHealthCheck() error {
 	h.healthCheckTicker = nil
 	h.Status = HostStatusUnknown
 	return nil
+}
+
+func (h *Host) IsUp() bool {
+	return h.Status == HostStatusUp
 }
