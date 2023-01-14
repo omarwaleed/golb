@@ -200,7 +200,6 @@ func (lb *LoadBalancer) CloseLogger() {
 }
 
 func (lb *LoadBalancer) DoRequest(w http.ResponseWriter, r *http.Request, host *Host) {
-	// http.Redirect(w, r, r.URL.Scheme+"//"+host.IPAddress, http.StatusFound)
 	allowed := lb.CheckRateLimit(IPAddress(r.RemoteAddr))
 	if !allowed {
 		w.WriteHeader(http.StatusTooManyRequests)
