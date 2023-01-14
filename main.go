@@ -3,12 +3,10 @@ package main
 import (
 	crand "crypto/rand"
 	"encoding/base64"
-	"errors"
 	"flag"
 	"log"
 	"math/rand"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -183,13 +181,13 @@ func HandleConfigRequest(lb *LoadBalancer) http.Handler {
 func HandleRoundRobinRequest(w http.ResponseWriter, r *http.Request, lb *LoadBalancer) {
 	lb.DomainHostsMu.Lock()
 	defer lb.DomainHostsMu.Unlock()
-	hosts, err := MatchHostList(r, lb)
+	routeToHosts, err := lb.MatchHostList(r)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("Bad gateway"))
 		return
 	}
-	validHosts := GetValidHosts(hosts)
+	validHosts := GetValidHosts(routeToHosts.Hosts)
 	if len(validHosts) == 0 {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("No host available"))
@@ -202,6 +200,9 @@ func HandleRoundRobinRequest(w http.ResponseWriter, r *http.Request, lb *LoadBal
 		lb.LastHostIndex = 0
 	}
 	host := validHosts[lb.LastHostIndex]
+	if lb.Sticky {
+		lb.SetStickySession(r, routeToHosts, host)
+	}
 	lb.DoRequest(w, r, host)
 }
 
@@ -209,13 +210,20 @@ func HandleRoundRobinRequest(w http.ResponseWriter, r *http.Request, lb *LoadBal
 func HandleRandomRequest(w http.ResponseWriter, r *http.Request, lb *LoadBalancer) {
 	lb.DomainHostsMu.Lock()
 	defer lb.DomainHostsMu.Unlock()
-	hosts, err := MatchHostList(r, lb)
+	routeToHosts, err := lb.MatchHostList(r)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("Bad gateway"))
 		return
 	}
-	validHosts := GetValidHosts(hosts)
+	if lb.Sticky {
+		host := lb.GetStickySessionHost(r, routeToHosts)
+		if host != nil && host.IsUp() {
+			lb.DoRequest(w, r, host)
+			return
+		}
+	}
+	validHosts := GetValidHosts(routeToHosts.Hosts)
 	if len(validHosts) == 0 {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("No host available"))
@@ -228,28 +236,10 @@ func HandleRandomRequest(w http.ResponseWriter, r *http.Request, lb *LoadBalance
 		rand.Intn(len(validHosts))
 		host = validHosts[rand.Intn(len(validHosts))]
 	}
-	lb.DoRequest(w, r, host)
-}
-
-func MatchHostList(r *http.Request, lb *LoadBalancer) ([]*Host, error) {
-	for key, hosts := range lb.DomainHosts {
-		splitKey := strings.Split(key, "*")
-		for i, part := range splitKey {
-			splitKey[i] = regexp.QuoteMeta(part)
-		}
-		modifiedKey := strings.Join(splitKey, ".*")
-		match, err := regexp.Match(modifiedKey, []byte(r.Host))
-		log.Println("Trying to match", key, "modified to", modifiedKey, "with", r.Host, "result", match)
-		if err != nil {
-			return nil, err
-		}
-		if !match {
-			continue
-		}
-		log.Println("Matched key", key)
-		return hosts, nil
+	if lb.Sticky {
+		lb.SetStickySession(r, routeToHosts, host)
 	}
-	return nil, errors.New("no hosts found")
+	lb.DoRequest(w, r, host)
 }
 
 // Return only the hosts that are up
