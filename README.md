@@ -13,6 +13,8 @@ A loadbalancer written entirely in go
 - [x] Copy request to client instead of redirecting
 - [x] Host based routing
 - [x] Health check
+- [ ] TCP Loadbalancing
+- [ ] UDP Loadbalancing
 - [ ] Request logger
 - [x] Rate limiter
 - [ ] Graphana metrics chart for history
