@@ -65,6 +65,10 @@ func main() {
 		lb.SetRateLimit(uint32(*rateLimitConfig))
 	}
 
+	if *configPort == 80 || *configPort == 443 {
+		panic("Config port cannot be assigned to ports 80 or 443")
+	}
+
 	// Set dashboard password
 	var dashboardPassword string
 	if len(*dashboardPasswordConfig) == 0 {
