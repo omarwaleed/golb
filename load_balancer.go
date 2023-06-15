@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -212,6 +213,7 @@ func (lb *LoadBalancer) DoRequest(w http.ResponseWriter, r *http.Request, host *
 	if !allowed {
 		w.WriteHeader(http.StatusTooManyRequests)
 		w.Write([]byte("Too many requests"))
+
 		return
 	}
 	r.URL = &url.URL{
@@ -220,7 +222,10 @@ func (lb *LoadBalancer) DoRequest(w http.ResponseWriter, r *http.Request, host *
 		Path:   r.URL.Path,
 	}
 	r.RequestURI = ""
+	startTime := time.Now()
 	resp, err := http.DefaultClient.Do(r)
+	endTime := time.Now()
+	timeDifference := endTime.Sub(startTime)
 	if err != nil {
 		log.Println("do request error:", err)
 		w.WriteHeader(http.StatusBadRequest)
@@ -235,6 +240,14 @@ func (lb *LoadBalancer) DoRequest(w http.ResponseWriter, r *http.Request, host *
 	}
 	w.WriteHeader(resp.StatusCode)
 	io.Copy(w, resp.Body)
+	lb.LogChan <- LogEntry{
+		ClientIpAddress: IPAddress(r.RemoteAddr),
+		HostIpAddress:   IPAddress(host.IPAddress),
+		StatusCode:      resp.StatusCode,
+		StartTime:       startTime,
+		TimeTaken:       timeDifference,
+		BytesWritten:    resp.ContentLength,
+	}
 }
 
 func (lb *LoadBalancer) MatchHostList(r *http.Request) (*RoutePrefixToHost, error) {
@@ -302,8 +315,10 @@ func writeLogEntry(entry LogEntry, ok bool, w *io.WriteCloser) {
 		}
 		return
 	}
-	log.Println(string(entry.Type) + " : " + entry.Message)
+	logValue := fmt.Sprintf("[%s] (%s) %s : [%v]", entry.Type, entry.ClientIpAddress, entry.TimeTaken, entry.Message)
+	log.Println(logValue)
+	log.Println()
 	if w != nil {
-		(*w).Write([]byte(string(entry.Type) + " : " + entry.Message))
+		(*w).Write([]byte(logValue))
 	}
 }

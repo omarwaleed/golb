@@ -1,5 +1,7 @@
 package main
 
+import "time"
+
 type LogType string
 
 const (
@@ -8,6 +10,12 @@ const (
 )
 
 type LogEntry struct {
-	Type    LogType
-	Message string
+	Type            LogType
+	Message         string
+	HostIpAddress   IPAddress
+	ClientIpAddress IPAddress
+	StartTime       time.Time
+	TimeTaken       time.Duration
+	StatusCode      int
+	BytesWritten    int64
 }
