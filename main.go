@@ -1,8 +1,6 @@
 package main
 
 import (
-	crand "crypto/rand"
-	"encoding/base64"
 	"flag"
 	"log"
 	"math/rand"
@@ -11,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	nanoid "github.com/matoous/go-nanoid/v2"
 	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -26,6 +25,7 @@ func main() {
 	rateLimitConfig := flag.Int("rate-limit", 0, "Rate limit requests per minute. 0 means no rate limit. Defaults to 0")
 	stickyConfig := flag.Bool("sticky", false, "Enable sticky sessions. Defaults to false")
 	dashboardPasswordConfig := flag.String("dashboard-password", "", "Password to use for dashboard. Defaults to random password printed to console")
+	tokenConfig := flag.String("token", "", "Token to use for dashboard authentication. Defaults to random token printed to console")
 
 	flag.Parse()
 
@@ -68,23 +68,41 @@ func main() {
 	// Set dashboard password
 	var dashboardPassword string
 	if len(*dashboardPasswordConfig) == 0 {
-		generatedPassword := make([]byte, 16)
-		_, err = crand.Read(generatedPassword)
+		// generatedPassword := make([]byte, 16)
+		// _, err = crand.Read(generatedPassword)
+		generatedPassword, err := nanoid.New(16)
 		if err != nil {
 			panic(err)
 		}
-		generatedPasswordbase64 := make([]byte, len(generatedPassword)*2)
-		base64.URLEncoding.Encode(generatedPasswordbase64, generatedPassword)
-		dashboardPassword = string(generatedPasswordbase64)
+		// generatedPasswordbase64 := make([]byte, len(generatedPassword)*2)
+		// base64.URLEncoding.Encode(generatedPasswordbase64, generatedPassword)
+		// dashboardPassword = string(generatedPasswordbase64)
+		dashboardPassword = generatedPassword
 		log.Println("Generated dashboard password:", dashboardPassword)
 	} else {
 		dashboardPassword = *dashboardPasswordConfig
 	}
+
+	// Set dashboard token
+	var token string
+	if len(*tokenConfig) == 0 {
+		// generatedToken := make([]byte, 64)
+		// _, err = crand.Read(generatedToken)
+		token, err := nanoid.New(32)
+		if err != nil {
+			panic(err)
+		}
+		log.Println("Generated API token:", token)
+	} else {
+		token = *tokenConfig
+	}
+
 	encryptedPassword, err := bcrypt.GenerateFromPassword([]byte(dashboardPassword), 10)
 	if err != nil {
 		panic(err)
 	}
 	lb.DashboardPassword = encryptedPassword
+	lb.ApiToken = []byte(token)
 
 	// Initialize HTTP and HTTPS listeners
 	go ListenInsecure(lb)

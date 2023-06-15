@@ -25,6 +25,7 @@ type LoadBalancer struct {
 	ForceHTTPS        bool
 	CertDomains       []string
 	DashboardPassword []byte
+	ApiToken          []byte
 	SigningKey        []byte
 	EncryptionKey     []byte
 
