@@ -35,7 +35,11 @@ func main() {
 	}
 
 	// Initialize load balancer
-	lb := NewLoadBalancer(distributionType, *forceHttpsConfig, *stickyConfig)
+	lb := NewLoadBalancer(&NewLoadBalancerParams{
+		DistributionType: distributionType,
+		ForceHTTPS:       *forceHttpsConfig,
+		Sticky:           *stickyConfig,
+	})
 	if len(*hostsConfig) > 0 {
 		hostStrings := strings.Split(*hostsConfig, ",")
 		for _, hostString := range hostStrings {

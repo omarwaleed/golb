@@ -49,24 +49,32 @@ type ipAddressRequest struct {
 	ResetTimer *time.Ticker
 }
 
-/* type ipAddressWithPrefix string // ipAddressWithPrefix is the IP address with the prefix separated with an underscore
-type stickySessionMemoryEntry struct {
-	Host        *Host
-	LastUsed    time.Time
-	ExpireTimer *time.Timer
-} */
+/*
+type ipAddressWithPrefix string // ipAddressWithPrefix is the IP address with the prefix separated with an underscore
 
-func NewLoadBalancer(distributionType DistributionType, forceHTTPS bool, sticky bool) *LoadBalancer {
-	_, err := ParseDistrubutionType(string(distributionType))
+	type stickySessionMemoryEntry struct {
+		Host        *Host
+		LastUsed    time.Time
+		ExpireTimer *time.Timer
+	}
+*/
+type NewLoadBalancerParams struct {
+	DistributionType DistributionType
+	ForceHTTPS       bool
+	Sticky           bool
+}
+
+func NewLoadBalancer(params *NewLoadBalancerParams) *LoadBalancer {
+	_, err := ParseDistrubutionType(string(params.DistributionType))
 	if err != nil {
 		panic(err)
 	}
 	logChan := make(chan LogEntry, 1024)
 	lb := &LoadBalancer{
 		DomainHosts:             []RoutePrefixToHost{},
-		DistributionType:        distributionType,
-		ForceHTTPS:              forceHTTPS,
-		Sticky:                  sticky,
+		DistributionType:        params.DistributionType,
+		ForceHTTPS:              params.ForceHTTPS,
+		Sticky:                  params.Sticky,
 		ipAddressToRequestCount: make(map[IPAddress]*ipAddressRequest),
 		LogChan:                 logChan,
 	}

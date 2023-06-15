@@ -3,7 +3,7 @@ package main
 import "testing"
 
 func TestLoadBalancerInitializing(t *testing.T) {
-	lb := NewLoadBalancer(DistributionTypeRoundRobin, false, false)
+	lb := NewLoadBalancer(&NewLoadBalancerParams{DistributionType: DistributionTypeRoundRobin, ForceHTTPS: false, Sticky: false})
 	if lb.DistributionType != DistributionTypeRoundRobin {
 		t.Fatal("DistributionType should be round_robin")
 	}
@@ -27,7 +27,7 @@ func TestLoadBalancerInitializingWithWrongDistributionType(t *testing.T) {
 			t.Fatal("The code did not panic")
 		}
 	}()
-	NewLoadBalancer("wrong", false, false)
+	NewLoadBalancer(&NewLoadBalancerParams{DistributionType: "wrong", ForceHTTPS: false, Sticky: false})
 }
 
 func TestDistributionTypeParsing(t *testing.T) {
