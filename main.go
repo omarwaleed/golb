@@ -36,6 +36,11 @@ func main() {
 	}
 }
 
+const (
+	STATUS_BAD_GATEWAY = "Bad Gateway"
+	NO_HOST_AVAILABLE  = "No host available"
+)
+
 func InitializeLB() *LoadBalancer {
 	// Define flags
 	configPort := flag.Int("config-port", 8080, "Port to listen on for configuration requests. Defaults to 8080")
@@ -178,7 +183,7 @@ func HandleRequestInsecure(lb *LoadBalancer) http.Handler {
 			HandleRandomRequest(w, r, lb)
 		default:
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Bad gateway"))
+			w.Write([]byte(STATUS_BAD_GATEWAY))
 			return
 		}
 	})
@@ -195,7 +200,7 @@ func HandleRequestSecure(lb *LoadBalancer) http.Handler {
 			HandleRandomRequest(w, r, lb)
 		default:
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Bad gateway"))
+			w.Write([]byte(STATUS_BAD_GATEWAY))
 			return
 		}
 	})
@@ -217,13 +222,13 @@ func HandleRoundRobinRequest(w http.ResponseWriter, r *http.Request, lb *LoadBal
 	routeToHosts, err := lb.MatchHostList(r)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Bad gateway"))
+		w.Write([]byte(STATUS_BAD_GATEWAY))
 		return
 	}
 	validHosts := GetValidHosts(routeToHosts.Hosts)
 	if len(validHosts) == 0 {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("No host available"))
+		w.Write([]byte(NO_HOST_AVAILABLE))
 		return
 	}
 	lb.LastHostIndexMu.Lock()
@@ -246,7 +251,7 @@ func HandleRandomRequest(w http.ResponseWriter, r *http.Request, lb *LoadBalance
 	routeToHosts, err := lb.MatchHostList(r)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("Bad gateway"))
+		w.Write([]byte(STATUS_BAD_GATEWAY))
 		return
 	}
 	if lb.Sticky {
@@ -259,7 +264,7 @@ func HandleRandomRequest(w http.ResponseWriter, r *http.Request, lb *LoadBalance
 	validHosts := GetValidHosts(routeToHosts.Hosts)
 	if len(validHosts) == 0 {
 		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte("No host available"))
+		w.Write([]byte(NO_HOST_AVAILABLE))
 		return
 	}
 	var host *Host
