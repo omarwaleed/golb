@@ -16,6 +16,27 @@ import (
 
 func main() {
 
+	lb := InitializeLB()
+
+	// Initialize HTTP and HTTPS listeners
+	go ListenInsecure(lb)
+	go ListenSecure(lb)
+
+	// Initialize configuration listener
+	configMux := http.NewServeMux()
+	configMux.Handle("/*", HandleConfigRequest(lb))
+	configServer := http.Server{
+		Addr:    ":" + strconv.Itoa(lb.ConfigPort),
+		Handler: configMux,
+	}
+	log.Println("Load balancer started. Config server listening on port", lb.ConfigPort)
+	err := configServer.ListenAndServe()
+	if err != nil {
+		log.Fatalln(err)
+	}
+}
+
+func InitializeLB() *LoadBalancer {
 	// Define flags
 	configPort := flag.Int("config-port", 8080, "Port to listen on for configuration requests. Defaults to 8080")
 	certDomains := flag.String("cert-domains", "", "Comma-separated list of domains to use for TLS certificate")
@@ -68,6 +89,7 @@ func main() {
 	if *configPort == 80 || *configPort == 443 {
 		panic("Config port cannot be assigned to ports 80 or 443")
 	}
+	lb.ConfigPort = *configPort
 
 	// Set dashboard password
 	var dashboardPassword string
@@ -108,22 +130,7 @@ func main() {
 	lb.DashboardPassword = encryptedPassword
 	lb.ApiToken = []byte(token)
 
-	// Initialize HTTP and HTTPS listeners
-	go ListenInsecure(lb)
-	go ListenSecure(lb)
-
-	// Initialize configuration listener
-	configMux := http.NewServeMux()
-	configMux.Handle("/*", HandleConfigRequest(lb))
-	configServer := http.Server{
-		Addr:    ":" + strconv.Itoa(*configPort),
-		Handler: configMux,
-	}
-	log.Println("Load balancer started. Config server listening on port", *configPort)
-	err = configServer.ListenAndServe()
-	if err != nil {
-		log.Fatalln(err)
-	}
+	return lb
 }
 
 // Start a listener for HTTP requests

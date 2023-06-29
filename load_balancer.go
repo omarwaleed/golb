@@ -28,6 +28,7 @@ type LoadBalancer struct {
 	ApiToken          []byte
 	SigningKey        []byte
 	EncryptionKey     []byte
+	ConfigPort        int
 
 	Sticky                     bool
 	StickySessionResetInterval int // the amount of seconds to hold a sticky session before an IP address is forgotten
