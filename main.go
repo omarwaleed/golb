@@ -73,20 +73,8 @@ func InitializeLB() *LoadBalancer {
 		ForceHTTPS:       *forceHttpsConfig,
 		Sticky:           *stickyConfig,
 	})
-	if len(*hostsConfig) > 0 {
-		hostStrings := strings.Split(*hostsConfig, ",")
-		for _, hostString := range hostStrings {
-			hostSplit := strings.Split(hostString, "=")
-			if len(hostSplit) != 2 {
-				panic("Invalid host configuration")
-			}
-			host, err := NewHost(hostSplit[1], "/", 30)
-			if err != nil {
-				panic(err)
-			}
-			lb.AddHost(hostSplit[0], host)
-		}
-	}
+
+	parseHostsConfig(lb, hostsConfig)
 
 	// Set certificate domains
 	if len(*certDomains) > 0 {
@@ -351,6 +339,23 @@ func GetValidHosts(hosts []*Host) []*Host {
 		}
 	}
 	return validHosts
+}
+
+func parseHostsConfig(lb *LoadBalancer, hostsConfig *string) {
+	if len(*hostsConfig) > 0 {
+		hostStrings := strings.Split(*hostsConfig, ",")
+		for _, hostString := range hostStrings {
+			hostSplit := strings.Split(hostString, "=")
+			if len(hostSplit) != 2 {
+				panic("Invalid host configuration")
+			}
+			host, err := NewHost(hostSplit[1], "/", 30)
+			if err != nil {
+				panic(err)
+			}
+			lb.AddHost(hostSplit[0], host)
+		}
+	}
 }
 
 func setDashboardPassword(dashboardPasswordConfig *string) string {
