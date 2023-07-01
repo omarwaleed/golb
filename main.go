@@ -99,36 +99,10 @@ func InitializeLB() *LoadBalancer {
 	lb.ConfigPort = *configPort
 
 	// Set dashboard password
-	var dashboardPassword string
-	if len(*dashboardPasswordConfig) == 0 {
-		// generatedPassword := make([]byte, 16)
-		// _, err = crand.Read(generatedPassword)
-		generatedPassword, err := nanoid.New(16)
-		if err != nil {
-			panic(err)
-		}
-		// generatedPasswordbase64 := make([]byte, len(generatedPassword)*2)
-		// base64.URLEncoding.Encode(generatedPasswordbase64, generatedPassword)
-		// dashboardPassword = string(generatedPasswordbase64)
-		dashboardPassword = generatedPassword
-		log.Println("Generated dashboard password:", dashboardPassword)
-	} else {
-		dashboardPassword = *dashboardPasswordConfig
-	}
+	var dashboardPassword string = setDashboardPassword(dashboardPasswordConfig)
 
 	// Set dashboard token
-	var token string
-	if len(*tokenConfig) == 0 {
-		// generatedToken := make([]byte, 64)
-		// _, err = crand.Read(generatedToken)
-		token, err := nanoid.New(32)
-		if err != nil {
-			panic(err)
-		}
-		log.Println("Generated API token:", token)
-	} else {
-		token = *tokenConfig
-	}
+	var token string = setDashboardToken(tokenConfig)
 
 	encryptedPassword, err := bcrypt.GenerateFromPassword([]byte(dashboardPassword), 10)
 	if err != nil {
@@ -291,4 +265,37 @@ func GetValidHosts(hosts []*Host) []*Host {
 		}
 	}
 	return validHosts
+}
+
+func setDashboardPassword(dashboardPasswordConfig *string) string {
+	if len(*dashboardPasswordConfig) == 0 {
+		// generatedPassword := make([]byte, 16)
+		// _, err = crand.Read(generatedPassword)
+		generatedPassword, err := nanoid.New(16)
+		if err != nil {
+			panic(err)
+		}
+		// generatedPasswordbase64 := make([]byte, len(generatedPassword)*2)
+		// base64.URLEncoding.Encode(generatedPasswordbase64, generatedPassword)
+		// dashboardPassword = string(generatedPasswordbase64)
+		log.Println("Generated dashboard password:", generatedPassword)
+		return generatedPassword
+	} else {
+		return *dashboardPasswordConfig
+	}
+}
+
+func setDashboardToken(tokenConfig *string) string {
+	if len(*tokenConfig) == 0 {
+		// generatedToken := make([]byte, 64)
+		// _, err = crand.Read(generatedToken)
+		token, err := nanoid.New(32)
+		if err != nil {
+			panic(err)
+		}
+		log.Println("Generated API token:", token)
+		return token
+	} else {
+		return *tokenConfig
+	}
 }
