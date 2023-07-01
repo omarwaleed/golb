@@ -37,6 +37,15 @@ const (
 	HostStatusUnknown HostStatus = "unknown"
 )
 
+func (rph *RoutePrefixToHost) Copy() *RoutePrefixToHost {
+	return &RoutePrefixToHost{
+		RoutePrefix:     rph.RoutePrefix,
+		Hosts:           rph.Hosts,
+		StickySessionMu: sync.Mutex{},
+		StickySessions:  make(map[IPAddress]*StickySessionEntry),
+	}
+}
+
 func NewHost(ipAddress string, healthCheckRoute string, healthCheckInterval int) (*Host, error) {
 	if !strings.HasPrefix(healthCheckRoute, "/") {
 		return nil, errors.New("health check route must start with a slash")
