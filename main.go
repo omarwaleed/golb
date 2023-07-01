@@ -39,6 +39,8 @@ func main() {
 const (
 	STATUS_BAD_GATEWAY = "Bad Gateway"
 	NO_HOST_AVAILABLE  = "No host available"
+	HTTP_PREFIX        = "http://"
+	HTTPS_PREFIX       = "https://"
 )
 
 func InitializeLB() *LoadBalancer {

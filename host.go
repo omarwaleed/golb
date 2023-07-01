@@ -47,9 +47,9 @@ func NewHost(ipAddress string, healthCheckRoute string, healthCheckInterval int)
 	if healthCheckInterval < 1 {
 		return nil, errors.New("health check interval must be greater than 0")
 	}
-	if strings.HasPrefix(ipAddress, "http://") || strings.HasPrefix(ipAddress, "https://") {
-		ipAddress = strings.Replace(ipAddress, "http://", "", 1)
-		ipAddress = strings.Replace(ipAddress, "https://", "", 1)
+	if strings.HasPrefix(ipAddress, HTTP_PREFIX) || strings.HasPrefix(ipAddress, HTTPS_PREFIX) {
+		ipAddress = strings.Replace(ipAddress, HTTP_PREFIX, "", 1)
+		ipAddress = strings.Replace(ipAddress, HTTPS_PREFIX, "", 1)
 	}
 	return &Host{
 		IPAddress:           ipAddress,
@@ -70,7 +70,7 @@ func (h *Host) StartHealthCheck() error {
 		defer ticker.Stop()
 		for ; true; <-ticker.C {
 			log.Println("Health Tick for", h.IPAddress)
-			_, err := http.DefaultClient.Get("http://" + h.IPAddress + h.HealthCheckRoute)
+			_, err := http.DefaultClient.Get(HTTP_PREFIX + h.IPAddress + h.HealthCheckRoute)
 			if err != nil {
 				log.Println("Health Tick for", h.IPAddress, "is", h.Status, "with error", err)
 				h.Status = HostStatusDown
