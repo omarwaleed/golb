@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"math/rand"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -41,6 +43,9 @@ const (
 	NO_HOST_AVAILABLE  = "No host available"
 	HTTP_PREFIX        = "http://"
 	HTTPS_PREFIX       = "https://"
+	TCP_PREFIX         = "tcp://"
+	UDP_PREFIX         = "udp://"
+	UNIX_PREFIX        = "unix://"
 )
 
 func InitializeLB() *LoadBalancer {
@@ -140,6 +145,30 @@ func ListenSecure(lb *LoadBalancer) {
 	}
 }
 
+func ListenNetwork(lb *LoadBalancer, network string) {
+	networkHosts := []RoutePrefixToHost{}
+	if network != "tcp" && network != "udp" && network != "unix" {
+		panic("Invalid network type")
+	}
+	lb.DomainHostsMu.Lock()
+	for index := range lb.DomainHosts {
+		domainHost := lb.DomainHosts[index].Copy()
+		if strings.HasPrefix(domainHost.RoutePrefix, TCP_PREFIX) {
+			networkHosts = append(networkHosts, *domainHost.Copy())
+		}
+	}
+	lb.DomainHostsMu.Unlock()
+	for index := range networkHosts {
+		tcpHost := networkHosts[index].Copy()
+		// TODO: don't listen on all network ports, instead listen on specific ports by parsing the route prefix
+		listener, err := net.Listen(network, "")
+		if err != nil {
+			log.Fatalln(err)
+		}
+		go HandleNonHTTPRequest(network, listener, tcpHost.Hosts)
+	}
+}
+
 // Handle HTTP requests
 func HandleRequestInsecure(lb *LoadBalancer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -180,6 +209,62 @@ func HandleRequestSecure(lb *LoadBalancer) http.Handler {
 			return
 		}
 	})
+}
+
+func HandleNonHTTPRequest(network string, listener net.Listener, hosts []*Host) {
+	// accept connection on port
+	// connect to host and pipe data to it
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Fatalln(err)
+		}
+		defer conn.Close()
+		hConn, err := net.Dial(network, hosts[0].IPAddress)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		defer hConn.Close()
+		if err != nil {
+			log.Fatalln(err)
+		}
+		fromClientChan := make(chan []byte)
+		fromHostChan := make(chan []byte)
+		ctx, cancelFn := context.WithCancel(context.Background())
+		go handleTCPConnectionfunc(&conn, fromClientChan, cancelFn)
+		go handleTCPConnectionfunc(&hConn, fromHostChan, cancelFn)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case data := <-fromClientChan:
+				_, err := hConn.Write(data)
+				if err != nil {
+					cancelFn()
+					log.Fatalln(err)
+				}
+			case data := <-fromHostChan:
+				_, err := conn.Write(data)
+				if err != nil {
+					cancelFn()
+					log.Fatalln(err)
+				}
+			}
+		}
+	}
+}
+
+// Awaits data from a TCP connection and sends it to the data channel. Cancels the context on error.
+func handleTCPConnectionfunc(conn *net.Conn, dataChan chan []byte, cancelFn context.CancelFunc) {
+	buf := make([]byte, 1024)
+	for {
+		n, err := (*conn).Read(buf)
+		if err != nil {
+			cancelFn()
+			log.Fatalln(err)
+		}
+		dataChan <- buf[:n]
+	}
 }
 
 // Handle configuration requests for the load balancer
@@ -244,12 +329,13 @@ func HandleRandomRequest(w http.ResponseWriter, r *http.Request, lb *LoadBalance
 		return
 	}
 	var host *Host
-	if len(validHosts) == 1 {
+	host = getRandomHost(validHosts)
+	/* if len(validHosts) == 1 {
 		host = (validHosts)[0]
 	} else {
 		rand.Intn(len(validHosts))
 		host = validHosts[rand.Intn(len(validHosts))]
-	}
+	} */
 	if lb.Sticky {
 		lb.SetStickySession(r, routeToHosts, host)
 	}
@@ -298,4 +384,12 @@ func setDashboardToken(tokenConfig *string) string {
 	} else {
 		return *tokenConfig
 	}
+}
+
+func getRandomHost(hosts []*Host) *Host {
+	if len(hosts) == 0 {
+		// NOTE: maybe should panic?
+		return nil
+	}
+	return hosts[rand.Intn(len(hosts))]
 }
