@@ -219,8 +219,8 @@ func HandleNonHTTPRequest(network string, listener net.Listener, hosts []*Host) 
 		fromClientChan := make(chan []byte)
 		fromHostChan := make(chan []byte)
 		ctx, cancelFn := context.WithCancel(context.Background())
-		go handleTCPConnectionfunc(&conn, fromClientChan, cancelFn)
-		go handleTCPConnectionfunc(&hConn, fromHostChan, cancelFn)
+		go handleNetworkConnection(&conn, fromClientChan, cancelFn)
+		go handleNetworkConnection(&hConn, fromHostChan, cancelFn)
 		for {
 			select {
 			case <-ctx.Done():
@@ -243,7 +243,7 @@ func HandleNonHTTPRequest(network string, listener net.Listener, hosts []*Host) 
 }
 
 // Awaits data from a TCP connection and sends it to the data channel. Cancels the context on error.
-func handleTCPConnectionfunc(conn *net.Conn, dataChan chan []byte, cancelFn context.CancelFunc) {
+func handleNetworkConnection(conn *net.Conn, dataChan chan []byte, cancelFn context.CancelFunc) {
 	buf := make([]byte, 1024)
 	for {
 		n, err := (*conn).Read(buf)
